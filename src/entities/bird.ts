@@ -80,6 +80,6 @@ export class Bird {
   }
 
   isCatchable(): boolean {
-    return this.state === 'ground';
+    return this.mesh.position.y < 1.2;  // still low enough to be caught, even mid-takeoff
   }
 }
