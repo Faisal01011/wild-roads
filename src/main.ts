@@ -1,4 +1,3 @@
-import * as THREE from 'three';
 import { createScene } from './world/scene';
 import { createLighting } from './world/lighting';
 import { createGround } from './world/ground';
