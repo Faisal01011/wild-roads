@@ -1,20 +1,19 @@
 import * as THREE from 'three';
 import { createScene } from './world/scene';
 import { createLighting } from './world/lighting';
-import { createGround } from './world/ground';
 import { Snake } from './player/snake';
 import { updateCameraFollow } from './world/cameraFollow';
+import { ChunkManager } from './world/chunkManager';
 
 const { scene, camera, renderer } = createScene();
 renderer.shadowMap.enabled = true;
 
 createLighting(scene);
 
-const ground = createGround();
-scene.add(ground);
-
 const snake = new Snake();
 scene.add(snake.mesh);
+
+const chunkManager = new ChunkManager(scene);
 
 const clock = new THREE.Clock();
 
@@ -25,6 +24,7 @@ function animate() {
 
   snake.update(delta);
   updateCameraFollow(camera, snake, delta);
+  chunkManager.update(snake.mesh.position);
 
   renderer.render(scene, camera);
 }
