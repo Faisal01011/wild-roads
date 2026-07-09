@@ -17,6 +17,8 @@ scene.add(snake.mesh);
 const chunkManager = new ChunkManager(scene);
 const rabbitManager = new RabbitManager(scene);
 
+let score = 0;
+
 const clock = new THREE.Clock();
 
 function animate() {
@@ -27,7 +29,12 @@ function animate() {
   snake.update(delta);
   updateCameraFollow(camera, snake, delta);
   chunkManager.update(snake.mesh.position);
-  rabbitManager.update(delta, snake.mesh.position);
+
+  const eaten = rabbitManager.update(delta, snake.mesh.position);
+  if (eaten > 0) {
+    score += eaten;
+    console.log('Score:', score); // temporary — real UI comes in Step 8
+  }
 
   renderer.render(scene, camera);
 }
