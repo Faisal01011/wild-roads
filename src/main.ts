@@ -12,7 +12,7 @@ renderer.shadowMap.enabled = true;
 createLighting(scene);
 
 const snake = new Snake();
-scene.add(snake.mesh);
+snake.addToScene(scene);
 
 const chunkManager = new ChunkManager(scene);
 const rabbitManager = new RabbitManager(scene);
@@ -26,14 +26,17 @@ function animate() {
 
   const delta = clock.getDelta();
 
-  snake.update(delta);
+  snake.update(delta, scene);
   updateCameraFollow(camera, snake, delta);
-  chunkManager.update(snake.mesh.position);
+  chunkManager.update(snake.head.position);
 
-  const eaten = rabbitManager.update(delta, snake.mesh.position);
+  const eaten = rabbitManager.update(delta, snake.head.position);
   if (eaten > 0) {
+    for (let i = 0; i < eaten; i++) {
+      snake.grow();
+    }
     score += eaten;
-    console.log('Score:', score); // temporary — real UI comes in Step 8
+    console.log('Score:', score, '| Length:', snake.length);
   }
 
   renderer.render(scene, camera);
