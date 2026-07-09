@@ -5,6 +5,7 @@ import { Snake } from './player/snake';
 import { updateCameraFollow } from './world/cameraFollow';
 import { ChunkManager } from './world/chunkManager';
 import { RabbitManager } from './entities/rabbitManager';
+import { updateScoreDisplay } from './utils/ui';
 
 const { scene, camera, renderer } = createScene();
 renderer.shadowMap.enabled = true;
@@ -18,6 +19,7 @@ const chunkManager = new ChunkManager(scene);
 const rabbitManager = new RabbitManager(scene);
 
 let score = 0;
+updateScoreDisplay(score);
 
 const clock = new THREE.Clock();
 
@@ -36,7 +38,7 @@ function animate() {
       snake.grow();
     }
     score += eaten;
-    console.log('Score:', score, '| Length:', snake.length);
+    updateScoreDisplay(score);
   }
 
   renderer.render(scene, camera);
