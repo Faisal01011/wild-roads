@@ -3,6 +3,7 @@ import { Bird } from './bird';
 
 const BIRD_COUNT = 10;
 const SPAWN_RADIUS = 40;
+const DESPAWN_RADIUS = 60;
 const EAT_DISTANCE = 1.0;
 
 export class BirdManager {
@@ -11,23 +12,28 @@ export class BirdManager {
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
-    for (let i = 0; i < BIRD_COUNT; i++) {
-      this.spawnOne();
-    }
   }
 
-  private spawnOne() {
+  private spawnOne(nearPosition: THREE.Vector3) {
     const angle = Math.random() * Math.PI * 2;
-    const dist = Math.random() * SPAWN_RADIUS;
+    const dist = SPAWN_RADIUS * 0.3 + Math.random() * SPAWN_RADIUS * 0.7;
     const position = new THREE.Vector3(
-      Math.cos(angle) * dist,
+      nearPosition.x + Math.cos(angle) * dist,
       0.3,
-      Math.sin(angle) * dist
+      nearPosition.z + Math.sin(angle) * dist
     );
 
     const bird = new Bird(position);
     this.birds.push(bird);
     this.scene.add(bird.mesh);
+  }
+
+  private removeBird(index: number) {
+    const bird = this.birds[index];
+    this.scene.remove(bird.mesh);
+    bird.mesh.geometry.dispose();
+    (bird.mesh.material as THREE.Material).dispose();
+    this.birds.splice(index, 1);
   }
 
   update(delta: number, snakeHeadPosition: THREE.Vector3): number {
@@ -37,36 +43,32 @@ export class BirdManager {
       bird.update(delta, snakeHeadPosition);
     }
 
+    // Eating — only catchable birds count
     for (let i = this.birds.length - 1; i >= 0; i--) {
       const bird = this.birds[i];
-
-      // Only catchable while still on the ground
       if (!bird.isCatchable()) continue;
 
       const distance = bird.mesh.position.distanceTo(snakeHeadPosition);
       if (distance < EAT_DISTANCE) {
-        this.scene.remove(bird.mesh);
-        bird.mesh.geometry.dispose();
-        (bird.mesh.material as THREE.Material).dispose();
-
-        this.birds.splice(i, 1);
+        this.removeBird(i);
         eatenCount++;
-        this.spawnOne();
       }
     }
 
-    // Also clean up birds that have flown far too high/away to matter,
-    // so the array doesn't grow unbounded with "escaped" birds
-    this.birds = this.birds.filter((bird) => {
-      if (!bird.isCatchable() && bird.mesh.position.y >= 7.5) {
-        this.scene.remove(bird.mesh);
-        bird.mesh.geometry.dispose();
-        (bird.mesh.material as THREE.Material).dispose();
-        this.spawnOne();
-        return false;
+    // Despawn fled birds that got high enough, AND anything too far away
+    for (let i = this.birds.length - 1; i >= 0; i--) {
+      const bird = this.birds[i];
+      const distance = bird.mesh.position.distanceTo(snakeHeadPosition);
+      const escapedHigh = !bird.isCatchable() && bird.mesh.position.y >= 7.5;
+
+      if (distance > DESPAWN_RADIUS || escapedHigh) {
+        this.removeBird(i);
       }
-      return true;
-    });
+    }
+
+    while (this.birds.length < BIRD_COUNT) {
+      this.spawnOne(snakeHeadPosition);
+    }
 
     return eatenCount;
   }
