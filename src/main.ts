@@ -6,7 +6,7 @@ import { updateCameraFollow } from './world/cameraFollow';
 import { ChunkManager } from './world/chunkManager';
 import { RabbitManager } from './entities/rabbitManager';
 import { BirdManager } from './entities/birdManager';
-import { updateScoreDisplay } from './utils/ui';
+import { updateScoreDisplay, updateStaminaBar } from './utils/ui';
 
 const { scene, camera, renderer } = createScene();
 renderer.shadowMap.enabled = true;
@@ -45,6 +45,8 @@ function animate() {
     score += totalEaten;
     updateScoreDisplay(score);
   }
+
+  updateStaminaBar(snake.staminaPercent);
 
   renderer.render(scene, camera);
 }

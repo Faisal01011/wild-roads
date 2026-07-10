@@ -2,16 +2,24 @@ import * as THREE from 'three';
 import { input } from '../utils/input';
 
 const FORWARD_SPEED = 5;
+const BOOST_SPEED = 9;
 const TURN_SPEED = 2.5;
-const SEGMENT_SPACING = 0.6; // distance between each segment along the trail
+const SEGMENT_SPACING = 0.6;
 const SEGMENT_RADIUS = 0.4;
-const HISTORY_LENGTH = 500; // max trail points kept — generous ceiling for growth
+const HISTORY_LENGTH = 500;
+
+const MAX_STAMINA = 100;
+const STAMINA_DRAIN_RATE = 35; // per second while boosting
+const STAMINA_REGEN_RATE = 20; // per second while not boosting
+const MIN_STAMINA_TO_BOOST = 5; // can't start a boost below this threshold
 
 export class Snake {
   public head: THREE.Mesh;
   private heading: number = 0;
   private segments: THREE.Mesh[] = [];
   private positionHistory: THREE.Vector3[] = [];
+  private stamina: number = MAX_STAMINA;
+  private isBoosting: boolean = false;
 
   constructor() {
     const headGeometry = new THREE.SphereGeometry(SEGMENT_RADIUS, 8, 8);
@@ -20,7 +28,6 @@ export class Snake {
     this.head.position.y = 0.5;
     this.head.castShadow = true;
 
-    // Start with a few segments so it doesn't look like a single dot
     for (let i = 0; i < 3; i++) {
       this.addSegment();
     }
@@ -43,6 +50,10 @@ export class Snake {
     return this.segments.length;
   }
 
+  get staminaPercent(): number {
+    return this.stamina / MAX_STAMINA;
+  }
+
   addToScene(scene: THREE.Scene) {
     scene.add(this.head);
     for (const segment of this.segments) {
@@ -63,13 +74,31 @@ export class Snake {
     this.heading -= turnInput * TURN_SPEED * delta;
     this.head.rotation.y = this.heading;
 
+    // Boost handling
+    const wantsBoost = input.isPressed('shift') || input.isPressed(' ');
+
+    if (wantsBoost && this.stamina > MIN_STAMINA_TO_BOOST) {
+      this.isBoosting = true;
+    }
+    if (!wantsBoost || this.stamina <= 0) {
+      this.isBoosting = false;
+    }
+
+    if (this.isBoosting) {
+      this.stamina = Math.max(0, this.stamina - STAMINA_DRAIN_RATE * delta);
+    } else {
+      this.stamina = Math.min(MAX_STAMINA, this.stamina + STAMINA_REGEN_RATE * delta);
+    }
+
+    const currentSpeed = this.isBoosting ? BOOST_SPEED : FORWARD_SPEED;
+
     // Move head forward
     const forward = new THREE.Vector3(
       Math.sin(this.heading),
       0,
       Math.cos(this.heading)
     );
-    this.head.position.addScaledVector(forward, FORWARD_SPEED * delta);
+    this.head.position.addScaledVector(forward, currentSpeed * delta);
 
     // Record head position into history
     this.positionHistory.unshift(this.head.position.clone());
@@ -77,8 +106,7 @@ export class Snake {
       this.positionHistory.pop();
     }
 
-    // Each segment follows a point further back in the trail,
-    // spaced out by SEGMENT_SPACING
+    // Segments follow the trail
     for (let i = 0; i < this.segments.length; i++) {
       const targetDistance = SEGMENT_SPACING * (i + 1);
       const point = this.getHistoryPointAtDistance(targetDistance);
@@ -87,13 +115,11 @@ export class Snake {
       }
     }
 
-    // If a new segment was added elsewhere (via grow()), make sure it's in the scene
     if (this.segments.length > previousSegmentCount) {
       this.addNewSegmentToScene(scene);
     }
   }
 
-  // Walk the history trail and find the point at a given distance from the head
   private getHistoryPointAtDistance(distance: number): THREE.Vector3 | null {
     let travelled = 0;
 
@@ -111,7 +137,6 @@ export class Snake {
       travelled += segmentLength;
     }
 
-    // Not enough history yet (e.g. right at spawn) — fall back to the oldest point
     return this.positionHistory[this.positionHistory.length - 1] ?? null;
   }
 }

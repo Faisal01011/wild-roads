@@ -10,3 +10,22 @@
   z-index: 10;
   pointer-events: none;
 }
+#stamina-bar-container {
+  position: fixed;
+  bottom: 24px;
+  left: 16px;
+  width: 200px;
+  height: 14px;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 7px;
+  overflow: hidden;
+  z-index: 10;
+  pointer-events: none;
+}
+
+#stamina-bar-fill {
+  height: 100%;
+  width: 100%;
+  background: #ffca28;
+  transition: width 0.1s linear;
+}
