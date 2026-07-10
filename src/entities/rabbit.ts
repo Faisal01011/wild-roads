@@ -1,5 +1,7 @@
 import * as THREE from 'three';
+import { getTerrainHeight } from '../world/chunk';
 
+const GROUND_OFFSET = 0.2;
 const WANDER_SPEED = 1.2;
 const FLEE_SPEED = 4;
 const FLEE_TRIGGER_RADIUS = 6;
@@ -54,6 +56,8 @@ export class Rabbit {
         .normalize();
 
       this.mesh.position.addScaledVector(fleeDirection, FLEE_SPEED * delta);
+      const terrainHeight = getTerrainHeight(this.mesh.position.x, this.mesh.position.z);
+      this.mesh.position.y = terrainHeight + GROUND_OFFSET;
       this.faceDirection(fleeDirection);
     } else {
       // Wander: change direction periodically

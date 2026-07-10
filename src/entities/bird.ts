@@ -1,5 +1,7 @@
 import * as THREE from 'three';
+import { getTerrainHeight } from '../world/chunk';
 
+const GROUND_OFFSET = 0.3;
 const WANDER_SPEED = 0.8;
 const FLEE_TRIGGER_RADIUS = 5;
 const FLY_UP_SPEED = 3;
@@ -60,15 +62,18 @@ export class Bird {
       // (no need to reset state; a fled bird stays fled, unlike the rabbit)
       this.mesh.position.y = Math.min(this.mesh.position.y, MAX_FLY_HEIGHT);
     } else {
-      // Ground wander, same pattern as rabbit
-      this.timeUntilDirectionChange -= delta;
-      if (this.timeUntilDirectionChange <= 0) {
-        this.wanderDirection = this.randomDirection();
-        this.timeUntilDirectionChange = this.randomInterval();
-      }
+  // Ground wander, same pattern as rabbit
+  this.timeUntilDirectionChange -= delta;
+  if (this.timeUntilDirectionChange <= 0) {
+    this.wanderDirection = this.randomDirection();
+    this.timeUntilDirectionChange = this.randomInterval();
+  }
 
-      this.mesh.position.addScaledVector(this.wanderDirection, WANDER_SPEED * delta);
-    }
+  this.mesh.position.addScaledVector(this.wanderDirection, WANDER_SPEED * delta);
+
+  const terrainHeight = getTerrainHeight(this.mesh.position.x, this.mesh.position.z);
+  this.mesh.position.y = terrainHeight + GROUND_OFFSET;
+}
 
     this.faceMovementDirection();
   }

@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 import { input } from '../utils/input';
 
+import { getTerrainHeight } from '../world/chunk';
+
+const HEAD_GROUND_OFFSET = 0.5;
+const SEGMENT_GROUND_OFFSET = 0.4;
 const FORWARD_SPEED = 5;
 const BOOST_SPEED = 9;
 const TURN_SPEED = 2.5;
@@ -42,9 +46,11 @@ export class Snake {
     this.segments.push(segment);
   }
 
-  grow() {
-    this.addSegment();
-  }
+  grow(scene: THREE.Scene) {
+  this.addSegment();
+  const newest = this.segments[this.segments.length - 1];
+  scene.add(newest); // add immediately, don't wait for the next update() cycle
+}
 
   get length(): number {
     return this.segments.length;
@@ -61,14 +67,8 @@ export class Snake {
     }
   }
 
-  private addNewSegmentToScene(scene: THREE.Scene) {
-    const newest = this.segments[this.segments.length - 1];
-    scene.add(newest);
-  }
-
-  update(delta: number, scene: THREE.Scene) {
-    const previousSegmentCount = this.segments.length;
-
+  update(delta: number) {
+    
     // Turning
     const turnInput = input.getTurnInput();
     this.heading -= turnInput * TURN_SPEED * delta;
@@ -99,6 +99,10 @@ export class Snake {
       Math.cos(this.heading)
     );
     this.head.position.addScaledVector(forward, currentSpeed * delta);
+    
+    // Follow terrain height
+    const terrainHeight = getTerrainHeight(this.head.position.x, this.head.position.z);
+    this.head.position.y = terrainHeight + HEAD_GROUND_OFFSET;
 
     // Record head position into history
     this.positionHistory.unshift(this.head.position.clone());
@@ -108,16 +112,13 @@ export class Snake {
 
     // Segments follow the trail
     for (let i = 0; i < this.segments.length; i++) {
-      const targetDistance = SEGMENT_SPACING * (i + 1);
-      const point = this.getHistoryPointAtDistance(targetDistance);
-      if (point) {
-        this.segments[i].position.copy(point);
-      }
-    }
-
-    if (this.segments.length > previousSegmentCount) {
-      this.addNewSegmentToScene(scene);
-    }
+  const targetDistance = SEGMENT_SPACING * (i + 1);
+  const point = this.getHistoryPointAtDistance(targetDistance);
+  if (point) {
+    const segmentTerrainHeight = getTerrainHeight(point.x, point.z);
+    this.segments[i].position.set(point.x, segmentTerrainHeight + SEGMENT_GROUND_OFFSET, point.z);
+  }
+}
   }
 
   private getHistoryPointAtDistance(distance: number): THREE.Vector3 | null {
@@ -139,4 +140,5 @@ export class Snake {
 
     return this.positionHistory[this.positionHistory.length - 1] ?? null;
   }
+  
 }

@@ -32,7 +32,7 @@ function animate() {
   const delta = clock.getDelta();
 
   dayNightCycle.update(delta);
-  snake.update(delta, scene);
+  snake.update(delta);
   updateCameraFollow(camera, snake, delta);
   chunkManager.update(snake.head.position);
 
@@ -41,13 +41,13 @@ function animate() {
   const totalEaten = eatenRabbits + eatenBirds;
 
   if (totalEaten > 0) {
-    for (let i = 0; i < totalEaten; i++) {
-      snake.grow();
-    }
-    score += totalEaten;
-    updateScoreDisplay(score);
-    audioManager.playEat();
+  for (let i = 0; i < totalEaten; i++) {
+    snake.grow(scene);
   }
+  score += totalEaten;
+  updateScoreDisplay(score);
+  audioManager.playEat();
+}
 
   updateStaminaBar(snake.staminaPercent);
 

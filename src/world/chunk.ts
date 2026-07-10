@@ -9,6 +9,10 @@ const NOISE_FREQUENCY = 0.02;
 // One shared noise function so terrain is continuous across chunk borders
 const noise2D = createNoise2D(() => 0.42); // fixed seed for now — consistent world every reload
 
+export function getTerrainHeight(worldX: number, worldZ: number): number {
+  return noise2D(worldX * NOISE_FREQUENCY, worldZ * NOISE_FREQUENCY) * HEIGHT_SCALE;
+}
+
 export function createChunk(chunkX: number, chunkZ: number): THREE.Mesh {
   const geometry = new THREE.PlaneGeometry(
     CHUNK_SIZE,
