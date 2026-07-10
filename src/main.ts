@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { createScene } from './world/scene';
-import { createLighting } from './world/lighting';
+import { DayNightCycle } from './world/lighting';
 import { Snake } from './player/snake';
 import { updateCameraFollow } from './world/cameraFollow';
 import { ChunkManager } from './world/chunkManager';
@@ -12,7 +12,7 @@ import { audioManager } from './utils/audio';
 const { scene, camera, renderer } = createScene();
 renderer.shadowMap.enabled = true;
 
-createLighting(scene);
+const dayNightCycle = new DayNightCycle(scene);
 
 const snake = new Snake();
 snake.addToScene(scene);
@@ -31,6 +31,7 @@ function animate() {
 
   const delta = clock.getDelta();
 
+  dayNightCycle.update(delta);
   snake.update(delta, scene);
   updateCameraFollow(camera, snake, delta);
   chunkManager.update(snake.head.position);
