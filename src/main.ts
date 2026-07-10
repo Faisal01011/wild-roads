@@ -7,6 +7,7 @@ import { ChunkManager } from './world/chunkManager';
 import { RabbitManager } from './entities/rabbitManager';
 import { BirdManager } from './entities/birdManager';
 import { updateScoreDisplay, updateStaminaBar } from './utils/ui';
+import { audioManager } from './utils/audio';
 
 const { scene, camera, renderer } = createScene();
 renderer.shadowMap.enabled = true;
@@ -44,6 +45,7 @@ function animate() {
     }
     score += totalEaten;
     updateScoreDisplay(score);
+    audioManager.playEat();
   }
 
   updateStaminaBar(snake.staminaPercent);

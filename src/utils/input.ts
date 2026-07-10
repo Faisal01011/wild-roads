@@ -1,8 +1,13 @@
+import { audioManager } from './audio';
+
 class InputManager {
   private keys: Set<string> = new Set();
 
   constructor() {
-    window.addEventListener('keydown', (e) => this.keys.add(e.key.toLowerCase()));
+    window.addEventListener('keydown', (e) => {
+      this.keys.add(e.key.toLowerCase());
+      audioManager.startAmbient();
+    });
     window.addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
   }
 
@@ -10,7 +15,6 @@ class InputManager {
     return this.keys.has(key.toLowerCase());
   }
 
-  // Convenience: -1 (left) to 1 (right) for turning
   getTurnInput(): number {
     let turn = 0;
     if (this.isPressed('a') || this.isPressed('arrowleft')) turn -= 1;
