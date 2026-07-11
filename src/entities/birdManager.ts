@@ -8,10 +8,12 @@ const EAT_DISTANCE = 1.0;
 
 export class BirdManager {
   private scene: THREE.Scene;
+  private model: THREE.Group;
   private birds: Bird[] = [];
 
-  constructor(scene: THREE.Scene) {
+  constructor(scene: THREE.Scene, model: THREE.Group) {
     this.scene = scene;
+    this.model = model;
   }
 
   private spawnOne(nearPosition: THREE.Vector3) {
@@ -23,7 +25,7 @@ export class BirdManager {
       nearPosition.z + Math.sin(angle) * dist
     );
 
-    const bird = new Bird(position);
+    const bird = new Bird(position, this.model);
     this.birds.push(bird);
     this.scene.add(bird.mesh);
   }
@@ -31,8 +33,6 @@ export class BirdManager {
   private removeBird(index: number) {
     const bird = this.birds[index];
     this.scene.remove(bird.mesh);
-    bird.mesh.geometry.dispose();
-    (bird.mesh.material as THREE.Material).dispose();
     this.birds.splice(index, 1);
   }
 
@@ -43,7 +43,6 @@ export class BirdManager {
       bird.update(delta, snakeHeadPosition);
     }
 
-    // Eating — only catchable birds count
     for (let i = this.birds.length - 1; i >= 0; i--) {
       const bird = this.birds[i];
       if (!bird.isCatchable()) continue;
@@ -55,7 +54,6 @@ export class BirdManager {
       }
     }
 
-    // Despawn fled birds that got high enough, AND anything too far away
     for (let i = this.birds.length - 1; i >= 0; i--) {
       const bird = this.birds[i];
       const distance = bird.mesh.position.distanceTo(snakeHeadPosition);

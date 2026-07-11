@@ -1,34 +1,38 @@
 import * as THREE from 'three';
 import { getTerrainHeight } from '../world/chunk';
 
-const GROUND_OFFSET = 0.3;
 const WANDER_SPEED = 0.8;
 const FLEE_TRIGGER_RADIUS = 5;
 const FLY_UP_SPEED = 3;
 const FLY_AWAY_SPEED = 6;
 const MAX_FLY_HEIGHT = 8;
 const DIRECTION_CHANGE_INTERVAL = 3;
+const GROUND_OFFSET = 0.3;
 
 type BirdState = 'ground' | 'fleeing';
 
 export class Bird {
-  public mesh: THREE.Mesh;
+  public mesh: THREE.Object3D;
   private state: BirdState = 'ground';
   private wanderDirection: THREE.Vector3;
   private timeUntilDirectionChange: number;
   private fleeDirection: THREE.Vector3 = new THREE.Vector3();
 
-  constructor(position: THREE.Vector3) {
-    // Placeholder shape until swapped for a real model
-    const geometry = new THREE.ConeGeometry(0.25, 0.5, 6);
-    const material = new THREE.MeshStandardMaterial({ color: 0x5d4037 });
-    this.mesh = new THREE.Mesh(geometry, material);
-    this.mesh.rotation.x = Math.PI / 2; // point forward instead of up
+  constructor(position: THREE.Vector3, model: THREE.Group) {
+    this.mesh = model.clone(true);
     this.mesh.position.copy(position);
-    this.mesh.castShadow = true;
+    this.enableShadows(this.mesh);
 
     this.wanderDirection = this.randomDirection();
     this.timeUntilDirectionChange = this.randomInterval();
+  }
+
+  private enableShadows(object: THREE.Object3D) {
+    object.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.castShadow = true;
+      }
+    });
   }
 
   private randomDirection(): THREE.Vector3 {
@@ -44,7 +48,6 @@ export class Bird {
     const distanceToSnake = this.mesh.position.distanceTo(snakeHeadPosition);
 
     if (this.state === 'ground' && distanceToSnake < FLEE_TRIGGER_RADIUS) {
-      // Startled — pick a horizontal escape direction and take off
       this.state = 'fleeing';
       this.fleeDirection = this.mesh.position
         .clone()
@@ -54,26 +57,21 @@ export class Bird {
     }
 
     if (this.state === 'fleeing') {
-      // Rise and move away simultaneously
       this.mesh.position.y += FLY_UP_SPEED * delta;
       this.mesh.position.addScaledVector(this.fleeDirection, FLY_AWAY_SPEED * delta);
-
-      // Once high enough and far enough, just let it be — it's no longer catchable
-      // (no need to reset state; a fled bird stays fled, unlike the rabbit)
       this.mesh.position.y = Math.min(this.mesh.position.y, MAX_FLY_HEIGHT);
     } else {
-  // Ground wander, same pattern as rabbit
-  this.timeUntilDirectionChange -= delta;
-  if (this.timeUntilDirectionChange <= 0) {
-    this.wanderDirection = this.randomDirection();
-    this.timeUntilDirectionChange = this.randomInterval();
-  }
+      this.timeUntilDirectionChange -= delta;
+      if (this.timeUntilDirectionChange <= 0) {
+        this.wanderDirection = this.randomDirection();
+        this.timeUntilDirectionChange = this.randomInterval();
+      }
 
-  this.mesh.position.addScaledVector(this.wanderDirection, WANDER_SPEED * delta);
+      this.mesh.position.addScaledVector(this.wanderDirection, WANDER_SPEED * delta);
 
-  const terrainHeight = getTerrainHeight(this.mesh.position.x, this.mesh.position.z);
-  this.mesh.position.y = terrainHeight + GROUND_OFFSET;
-}
+      const terrainHeight = getTerrainHeight(this.mesh.position.x, this.mesh.position.z);
+      this.mesh.position.y = terrainHeight + GROUND_OFFSET;
+    }
 
     this.faceMovementDirection();
   }
@@ -85,6 +83,6 @@ export class Bird {
   }
 
   isCatchable(): boolean {
-    return this.mesh.position.y < 1.2;  // still low enough to be caught, even mid-takeoff
+    return this.mesh.position.y < 1.2;
   }
 }

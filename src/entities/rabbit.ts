@@ -1,30 +1,35 @@
 import * as THREE from 'three';
 import { getTerrainHeight } from '../world/chunk';
 
-const GROUND_OFFSET = 0.2;
 const WANDER_SPEED = 1.2;
 const FLEE_SPEED = 4;
 const FLEE_TRIGGER_RADIUS = 6;
-const DIRECTION_CHANGE_INTERVAL = 2.5; // seconds, avg time before picking a new wander direction
+const DIRECTION_CHANGE_INTERVAL = 2.5;
+const GROUND_OFFSET = 0.2;
 
 type RabbitState = 'idle' | 'wander' | 'flee';
 
 export class Rabbit {
-  public mesh: THREE.Mesh;
+  public mesh: THREE.Object3D;
   private state: RabbitState = 'wander';
   private wanderDirection: THREE.Vector3;
   private timeUntilDirectionChange: number;
 
-  constructor(position: THREE.Vector3) {
-    // Placeholder shape until we swap in a real rabbit model
-    const geometry = new THREE.BoxGeometry(0.4, 0.4, 0.6);
-    const material = new THREE.MeshStandardMaterial({ color: 0xcdaa7d });
-    this.mesh = new THREE.Mesh(geometry, material);
+  constructor(position: THREE.Vector3, model: THREE.Group) {
+    this.mesh = model.clone(true);
     this.mesh.position.copy(position);
-    this.mesh.castShadow = true;
+    this.enableShadows(this.mesh);
 
     this.wanderDirection = this.randomDirection();
     this.timeUntilDirectionChange = this.randomInterval();
+  }
+
+  private enableShadows(object: THREE.Object3D) {
+    object.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.castShadow = true;
+      }
+    });
   }
 
   private randomDirection(): THREE.Vector3 {
@@ -39,16 +44,13 @@ export class Rabbit {
   update(delta: number, snakeHeadPosition: THREE.Vector3) {
     const distanceToSnake = this.mesh.position.distanceTo(snakeHeadPosition);
 
-    // Decide state
     if (distanceToSnake < FLEE_TRIGGER_RADIUS) {
       this.state = 'flee';
     } else if (this.state === 'flee') {
-      // Just escaped danger, go back to wandering
       this.state = 'wander';
     }
 
     if (this.state === 'flee') {
-      // Run directly away from the snake
       const fleeDirection = this.mesh.position
         .clone()
         .sub(snakeHeadPosition)
@@ -56,11 +58,8 @@ export class Rabbit {
         .normalize();
 
       this.mesh.position.addScaledVector(fleeDirection, FLEE_SPEED * delta);
-      const terrainHeight = getTerrainHeight(this.mesh.position.x, this.mesh.position.z);
-      this.mesh.position.y = terrainHeight + GROUND_OFFSET;
       this.faceDirection(fleeDirection);
     } else {
-      // Wander: change direction periodically
       this.timeUntilDirectionChange -= delta;
       if (this.timeUntilDirectionChange <= 0) {
         this.wanderDirection = this.randomDirection();
@@ -70,6 +69,9 @@ export class Rabbit {
       this.mesh.position.addScaledVector(this.wanderDirection, WANDER_SPEED * delta);
       this.faceDirection(this.wanderDirection);
     }
+
+    const terrainHeight = getTerrainHeight(this.mesh.position.x, this.mesh.position.z);
+    this.mesh.position.y = terrainHeight + GROUND_OFFSET;
   }
 
   private faceDirection(direction: THREE.Vector3) {

@@ -1,36 +1,50 @@
 import * as THREE from 'three';
 import { input } from '../utils/input';
+import { getTerrainHeight, resolveRockCollisions } from '../world/chunk';
+import type { RockCollider } from '../world/chunk';
 
-import { getTerrainHeight } from '../world/chunk';
-
-const HEAD_GROUND_OFFSET = 0.5;
-const SEGMENT_GROUND_OFFSET = 0.4;
 const FORWARD_SPEED = 5;
 const BOOST_SPEED = 9;
 const TURN_SPEED = 2.5;
 const SEGMENT_SPACING = 0.6;
-const SEGMENT_RADIUS = 0.4;
 const HISTORY_LENGTH = 500;
+const HEAD_GROUND_OFFSET = 0.5;
+const SEGMENT_GROUND_OFFSET = 0.4;
+const HEAD_COLLISION_RADIUS = 0.5;
 
 const MAX_STAMINA = 100;
-const STAMINA_DRAIN_RATE = 35; // per second while boosting
-const STAMINA_REGEN_RATE = 20; // per second while not boosting
-const MIN_STAMINA_TO_BOOST = 5; // can't start a boost below this threshold
+const STAMINA_DRAIN_RATE = 35;
+const STAMINA_REGEN_RATE = 20;
+const MIN_STAMINA_TO_BOOST = 5;
 
 export class Snake {
-  public head: THREE.Mesh;
+  public head: THREE.Object3D;
   private heading: number = 0;
-  private segments: THREE.Mesh[] = [];
+  private segments: THREE.Object3D[] = [];
   private positionHistory: THREE.Vector3[] = [];
   private stamina: number = MAX_STAMINA;
   private isBoosting: boolean = false;
 
   constructor() {
-    const headGeometry = new THREE.SphereGeometry(SEGMENT_RADIUS, 8, 8);
-    const headMaterial = new THREE.MeshStandardMaterial({ color: 0x1b5e20 });
-    this.head = new THREE.Mesh(headGeometry, headMaterial);
-    this.head.position.y = 0.5;
-    this.head.castShadow = true;
+    const headGroup = new THREE.Group();
+
+    const headGeometry = new THREE.ConeGeometry(0.4, 0.7, 8);
+    const headMaterial = new THREE.MeshStandardMaterial({ color: 0xc9a35c });
+    const headMesh = new THREE.Mesh(headGeometry, headMaterial);
+    headMesh.rotation.x = Math.PI / 2;
+    headMesh.castShadow = true;
+    headGroup.add(headMesh);
+
+    const eyeGeometry = new THREE.SphereGeometry(0.06, 6, 6);
+    const eyeMaterial = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
+    const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+    leftEye.position.set(-0.15, 0.1, 0.2);
+    const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+    rightEye.position.set(0.15, 0.1, 0.2);
+    headGroup.add(leftEye, rightEye);
+
+    this.head = headGroup;
+    this.head.position.y = HEAD_GROUND_OFFSET;
 
     for (let i = 0; i < 3; i++) {
       this.addSegment();
@@ -38,8 +52,8 @@ export class Snake {
   }
 
   private addSegment() {
-    const geometry = new THREE.SphereGeometry(SEGMENT_RADIUS, 8, 8);
-    const material = new THREE.MeshStandardMaterial({ color: 0x2e7d32 });
+    const geometry = new THREE.SphereGeometry(0.35, 8, 8);
+    const material = new THREE.MeshStandardMaterial({ color: 0xc9a35c });
     const segment = new THREE.Mesh(geometry, material);
     segment.castShadow = true;
     segment.position.copy(this.head.position);
@@ -47,10 +61,10 @@ export class Snake {
   }
 
   grow(scene: THREE.Scene) {
-  this.addSegment();
-  const newest = this.segments[this.segments.length - 1];
-  scene.add(newest); // add immediately, don't wait for the next update() cycle
-}
+    this.addSegment();
+    const newest = this.segments[this.segments.length - 1];
+    scene.add(newest);
+  }
 
   get length(): number {
     return this.segments.length;
@@ -67,14 +81,11 @@ export class Snake {
     }
   }
 
-  update(delta: number) {
-    
-    // Turning
+  update(delta: number, rockColliders: RockCollider[]) {
     const turnInput = input.getTurnInput();
     this.heading -= turnInput * TURN_SPEED * delta;
     this.head.rotation.y = this.heading;
 
-    // Boost handling
     const wantsBoost = input.isPressed('shift') || input.isPressed(' ');
 
     if (wantsBoost && this.stamina > MIN_STAMINA_TO_BOOST) {
@@ -92,33 +103,31 @@ export class Snake {
 
     const currentSpeed = this.isBoosting ? BOOST_SPEED : FORWARD_SPEED;
 
-    // Move head forward
     const forward = new THREE.Vector3(
       Math.sin(this.heading),
       0,
       Math.cos(this.heading)
     );
     this.head.position.addScaledVector(forward, currentSpeed * delta);
-    
-    // Follow terrain height
+
+    resolveRockCollisions(this.head.position, rockColliders, HEAD_COLLISION_RADIUS);
+
     const terrainHeight = getTerrainHeight(this.head.position.x, this.head.position.z);
     this.head.position.y = terrainHeight + HEAD_GROUND_OFFSET;
 
-    // Record head position into history
     this.positionHistory.unshift(this.head.position.clone());
     if (this.positionHistory.length > HISTORY_LENGTH) {
       this.positionHistory.pop();
     }
 
-    // Segments follow the trail
     for (let i = 0; i < this.segments.length; i++) {
-  const targetDistance = SEGMENT_SPACING * (i + 1);
-  const point = this.getHistoryPointAtDistance(targetDistance);
-  if (point) {
-    const segmentTerrainHeight = getTerrainHeight(point.x, point.z);
-    this.segments[i].position.set(point.x, segmentTerrainHeight + SEGMENT_GROUND_OFFSET, point.z);
-  }
-}
+      const targetDistance = SEGMENT_SPACING * (i + 1);
+      const point = this.getHistoryPointAtDistance(targetDistance);
+      if (point) {
+        const segmentTerrainHeight = getTerrainHeight(point.x, point.z);
+        this.segments[i].position.set(point.x, segmentTerrainHeight + SEGMENT_GROUND_OFFSET, point.z);
+      }
+    }
   }
 
   private getHistoryPointAtDistance(distance: number): THREE.Vector3 | null {
@@ -140,5 +149,4 @@ export class Snake {
 
     return this.positionHistory[this.positionHistory.length - 1] ?? null;
   }
-  
 }

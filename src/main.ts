@@ -8,50 +8,60 @@ import { RabbitManager } from './entities/rabbitManager';
 import { BirdManager } from './entities/birdManager';
 import { updateScoreDisplay, updateStaminaBar } from './utils/ui';
 import { audioManager } from './utils/audio';
+import { preloadAssets } from './utils/assetLoader';
 
-const { scene, camera, renderer } = createScene();
-renderer.shadowMap.enabled = true;
+async function start() {
+  const assets = await preloadAssets();
 
-const dayNightCycle = new DayNightCycle(scene);
+  document.getElementById('loading-screen')?.classList.add('hidden');
 
-const snake = new Snake();
-snake.addToScene(scene);
+  const { scene, camera, renderer } = createScene();
+  renderer.shadowMap.enabled = true;
 
-const chunkManager = new ChunkManager(scene);
-const rabbitManager = new RabbitManager(scene);
-const birdManager = new BirdManager(scene);
+  const dayNightCycle = new DayNightCycle(scene);
 
-let score = 0;
-updateScoreDisplay(score);
+  const snake = new Snake();
+  snake.addToScene(scene);
 
-const clock = new THREE.Clock();
+  const chunkManager = new ChunkManager(scene, assets);
+  const rabbitManager = new RabbitManager(scene, assets.rabbit);
+  const birdManager = new BirdManager(scene, assets.gull);
 
-function animate() {
-  requestAnimationFrame(animate);
-
-  const delta = clock.getDelta();
-
-  dayNightCycle.update(delta);
-  snake.update(delta);
-  updateCameraFollow(camera, snake, delta);
-  chunkManager.update(snake.head.position);
-
-  const eatenRabbits = rabbitManager.update(delta, snake.head.position);
-  const eatenBirds = birdManager.update(delta, snake.head.position);
-  const totalEaten = eatenRabbits + eatenBirds;
-
-  if (totalEaten > 0) {
-  for (let i = 0; i < totalEaten; i++) {
-    snake.grow(scene);
-  }
-  score += totalEaten;
+  let score = 0;
   updateScoreDisplay(score);
-  audioManager.playEat();
-}
 
-  updateStaminaBar(snake.staminaPercent);
+  const clock = new THREE.Clock();
 
-  renderer.render(scene, camera);
-}
+  function animate() {
+    requestAnimationFrame(animate);
+
+    const delta = clock.getDelta();
+
+    dayNightCycle.update(delta);
+    const rockColliders = chunkManager.getRockColliders();
+    snake.update(delta, rockColliders);
+    updateCameraFollow(camera, snake, delta);
+    chunkManager.update(snake.head.position);
+
+    const eatenRabbits = rabbitManager.update(delta, snake.head.position);
+    const eatenBirds = birdManager.update(delta, snake.head.position);
+    const totalEaten = eatenRabbits + eatenBirds;
+
+    if (totalEaten > 0) {
+      for (let i = 0; i < totalEaten; i++) {
+        snake.grow(scene);
+      }
+      score += totalEaten;
+      updateScoreDisplay(score);
+      audioManager.playEat();
+    }
+
+    updateStaminaBar(snake.staminaPercent);
+
+    renderer.render(scene, camera);
+  }
 
 animate();
+}
+
+start();

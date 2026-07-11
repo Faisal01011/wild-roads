@@ -3,6 +3,7 @@ import * as THREE from 'three';
 export function createScene() {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x87ceeb); // sky blue
+  scene.fog = new THREE.Fog(0x87ceeb, 40, 150)
 
   const camera = new THREE.PerspectiveCamera(
     60,

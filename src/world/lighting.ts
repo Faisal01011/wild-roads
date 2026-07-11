@@ -5,7 +5,7 @@ export class DayNightCycle {
   private ambient: THREE.AmbientLight;
   private scene: THREE.Scene;
   private time: number = 0.3; // 0 = midnight, 0.5 = noon, 1 = midnight again
-  private readonly CYCLE_DURATION = 120; // full day length in seconds — tune to taste
+  private readonly CYCLE_DURATION = 300; // full day length in seconds — tune to taste
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
@@ -69,5 +69,8 @@ export class DayNightCycle {
     }
 
     this.scene.background = skyColor;
+    if (this.scene.fog instanceof THREE.Fog) {
+  this.scene.fog.color = skyColor;
+}
   }
 }
