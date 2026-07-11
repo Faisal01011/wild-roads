@@ -12,8 +12,7 @@ const HEAD_GROUND_OFFSET = 0.5;
 const SEGMENT_GROUND_OFFSET = 0.4;
 const HEAD_COLLISION_RADIUS = 0.5;
 const SEGMENT_BASE_RADIUS = 0.35;
-const TAPER_COUNT = 4; // how many segments near the tail taper down
-const TIP_LENGTH = 0.5;
+const TAPER_COUNT = 4;
 
 const MAX_STAMINA = 100;
 const STAMINA_DRAIN_RATE = 35;
@@ -24,7 +23,6 @@ export class Snake {
   public head: THREE.Object3D;
   private heading: number = 0;
   private segments: THREE.Mesh[] = [];
-  private tip: THREE.Mesh;
   private positionHistory: THREE.Vector3[] = [];
   private stamina: number = MAX_STAMINA;
   private isBoosting: boolean = false;
@@ -49,12 +47,6 @@ export class Snake {
 
     this.head = headGroup;
     this.head.position.y = HEAD_GROUND_OFFSET;
-
-    // Tail tip — a small cone that always sits past the last body segment
-    const tipGeometry = new THREE.ConeGeometry(SEGMENT_BASE_RADIUS * 0.6, TIP_LENGTH, 8);
-    const tipMaterial = new THREE.MeshStandardMaterial({ color: 0xc9a35c });
-    this.tip = new THREE.Mesh(tipGeometry, tipMaterial);
-    this.tip.castShadow = true;
 
     for (let i = 0; i < 3; i++) {
       this.addSegment();
@@ -89,7 +81,6 @@ export class Snake {
     for (const segment of this.segments) {
       scene.add(segment);
     }
-    scene.add(this.tip);
   }
 
   update(delta: number, rockColliders: RockCollider[]) {
@@ -140,7 +131,6 @@ export class Snake {
         const segmentTerrainHeight = getTerrainHeight(point.x, point.z);
         this.segments[i].position.set(point.x, segmentTerrainHeight + SEGMENT_GROUND_OFFSET, point.z);
 
-        // Taper the last few segments down toward the tail tip
         const distanceFromTail = totalSegments - 1 - i;
         if (distanceFromTail < TAPER_COUNT) {
           const taperFactor = 0.35 + 0.65 * (distanceFromTail / TAPER_COUNT);
@@ -148,32 +138,6 @@ export class Snake {
         } else {
           this.segments[i].scale.setScalar(1);
         }
-      }
-    }
-
-    // Position the tail tip just past the last segment, oriented along the trail
-    this.updateTailTip(totalSegments);
-  }
-
-  private updateTailTip(totalSegments: number) {
-    const lastDistance = SEGMENT_SPACING * totalSegments;
-    const tipDistance = lastDistance + TIP_LENGTH * 0.6;
-
-    const tailPoint = this.getHistoryPointAtDistance(lastDistance);
-    const tipPoint = this.getHistoryPointAtDistance(tipDistance);
-
-    if (tailPoint && tipPoint) {
-      const tipTerrainHeight = getTerrainHeight(tailPoint.x, tailPoint.z);
-      this.tip.position.set(tailPoint.x, tipTerrainHeight + SEGMENT_GROUND_OFFSET, tailPoint.z);
-
-      // Orient the cone to point backward along the direction from tip to tail
-      const direction = tailPoint.clone().sub(tipPoint);
-      if (direction.lengthSq() > 0.0001) {
-        direction.normalize();
-        const angle = Math.atan2(direction.x, direction.z);
-        this.tip.rotation.set(Math.PI / 2, 0, 0);
-        this.tip.rotation.y = angle;
-        this.tip.rotateX(Math.PI / 2);
       }
     }
   }
