@@ -36,7 +36,7 @@ export class ChunkManager {
           this.scene.add(chunk);
           this.loadedChunks.set(k, chunk);
 
-          const { group, rockColliders } = scatterDecorations(x, z, this.assets);
+          const { group, rockColliders } = scatterDecorations(x, z, this.assets, chunk);
           this.scene.add(group);
           this.loadedDecorations.set(k, group);
           this.loadedColliders.set(k, rockColliders);

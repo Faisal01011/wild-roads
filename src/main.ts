@@ -1,3 +1,4 @@
+import './style.css';
 import * as THREE from 'three';
 import { createScene } from './world/scene';
 import { DayNightCycle } from './world/lighting';

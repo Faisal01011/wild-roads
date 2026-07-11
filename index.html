@@ -4,18 +4,45 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Wild Roads</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Nunito+Sans:wght@400;600;700;800&display=swap"
+      rel="stylesheet"
+    />
   </head>
   <body>
-    <div id="score-display">Score: 0</div>
+    <div id="loading-screen">
+      <div class="loading-bg"></div>
+      <div class="loading-content">
+        <h1 class="loading-title">WILD<span>ROADS</span></h1>
+        <p class="loading-tagline">Hunt&nbsp;&nbsp;·&nbsp;&nbsp;Grow&nbsp;&nbsp;·&nbsp;&nbsp;Survive</p>
+        <div class="loading-trail">
+          <span></span><span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <p class="loading-status">Entering the wild...</p>
+      </div>
+    </div>
+
+    <div id="hud-top">
+      <div class="hud-panel">
+        <span class="hud-icon">◆</span>
+        <div class="hud-text">
+          <span class="hud-label">Score</span>
+          <span class="hud-value" id="score-value">0</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="hud-bottom">
+      <div class="hud-panel stamina-panel">
+        <span class="hud-label">Stamina</span>
+        <div id="stamina-bar-container">
+          <div id="stamina-bar-fill"></div>
+        </div>
+      </div>
+    </div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
-  <body>
-  <div id="score-display">Score: 0</div>
-  <div id="stamina-bar-container">
-    <div id="stamina-bar-fill"></div>
-    <div id="loading-screen">
-  <div id="loading-text">Loading Wild Roads...</div>
-</div>
-  <script type="module" src="/src/main.ts"></script>
-</body>
 </html>

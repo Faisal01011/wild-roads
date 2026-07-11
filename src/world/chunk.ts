@@ -43,8 +43,27 @@ export function createChunk(chunkX: number, chunkZ: number): THREE.Mesh {
   return mesh;
 }
 
+// Used only for the snake/player's own height — a smooth approximation, not tied
+// to a specific chunk mesh (since the player can be anywhere across chunk borders).
 export function getTerrainHeight(worldX: number, worldZ: number): number {
   return noise2D(worldX * NOISE_FREQUENCY, worldZ * NOISE_FREQUENCY) * HEIGHT_SCALE;
+}
+
+// Used for decorations — raycasts straight down onto the ACTUAL rendered chunk mesh,
+// guaranteeing an exact match with what's visible on screen, no approximation involved.
+const raycaster = new THREE.Raycaster();
+raycaster.far = 2000;
+const rayOrigin = new THREE.Vector3();
+const rayDirection = new THREE.Vector3(0, -1, 0);
+
+function sampleHeightOnMesh(mesh: THREE.Mesh, worldX: number, worldZ: number): number {
+  rayOrigin.set(worldX, 1000, worldZ);
+  raycaster.set(rayOrigin, rayDirection);
+  const intersections = raycaster.intersectObject(mesh, false);
+  if (intersections.length > 0) {
+    return intersections[0].point.y;
+  }
+  return getTerrainHeight(worldX, worldZ); // fallback, should rarely trigger
 }
 
 export interface ChunkAssets {
@@ -113,8 +132,10 @@ function extractMesh(group: THREE.Group): THREE.Mesh | null {
 export function scatterDecorations(
   chunkX: number,
   chunkZ: number,
-  assets: ChunkAssets
+  assets: ChunkAssets,
+  terrainMesh: THREE.Mesh
 ): ChunkDecorations {
+  terrainMesh.updateMatrixWorld(true);
   const group = new THREE.Group();
   const rockColliders: RockCollider[] = [];
   const worldOffsetX = chunkX * CHUNK_SIZE;
@@ -150,7 +171,7 @@ export function scatterDecorations(
 
       instance.scale.multiplyScalar(variation);
 
-      const height = getTerrainHeight(worldX, worldZ);
+      const height = sampleHeightOnMesh(terrainMesh, worldX, worldZ);
       instance.position.set(localX, height + groundOffset * variation, localZ);
       instance.rotation.y = rr * Math.PI * 2;
 
@@ -177,7 +198,7 @@ export function scatterDecorations(
   placeItems(BUSHES_PER_CHUNK, assets.bush, 2, [0.7, 1.1], false);
   placeItems(ROCKS_PER_CHUNK, assets.rock, 4, [0.6, 1.2], true);
 
-  const grassInstances = createGrassInstances(chunkX, chunkZ, assets.grass);
+  const grassInstances = createGrassInstances(chunkX, chunkZ, assets.grass, terrainMesh);
   if (grassInstances) group.add(grassInstances);
 
   group.position.set(worldOffsetX, 0, worldOffsetZ);
@@ -187,7 +208,8 @@ export function scatterDecorations(
 function createGrassInstances(
   chunkX: number,
   chunkZ: number,
-  grassTemplate: THREE.Group
+  grassTemplate: THREE.Group,
+  terrainMesh: THREE.Mesh
 ): THREE.InstancedMesh | null {
   const mesh = extractMesh(grassTemplate);
   if (!mesh) return null;
@@ -227,7 +249,7 @@ function createGrassInstances(
       const worldZ = worldOffsetZ + localZ;
       const scale = GRASS_BASE_SCALE * (0.7 + rs * 0.6);
 
-      const height = getTerrainHeight(worldX, worldZ);
+      const height = sampleHeightOnMesh(terrainMesh, worldX, worldZ);
       position.set(localX, height + baseGroundOffset * scale, localZ);
       quaternion.setFromAxisAngle(upVector, rr * Math.PI * 2);
       scaleVec.setScalar(scale);
@@ -242,8 +264,6 @@ function createGrassInstances(
   return instanced;
 }
 
-// Pushes a position outside of any rock it's currently overlapping.
-// bufferRadius is the moving object's own approximate size (e.g. snake head radius).
 export function resolveRockCollisions(
   position: THREE.Vector3,
   colliders: RockCollider[],
