@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { inject } from '@vercel/analytics';
 import { createScene } from './world/scene';
 import { DayNightCycle } from './world/lighting';
 import { Snake } from './player/snake';
@@ -9,6 +10,9 @@ import { BirdManager } from './entities/birdManager';
 import { updateScoreDisplay, updateStaminaBar } from './utils/ui';
 import { audioManager } from './utils/audio';
 import { preloadAssets } from './utils/assetLoader';
+
+// Initialize Vercel Web Analytics
+inject();
 
 async function start() {
   const assets = await preloadAssets();
