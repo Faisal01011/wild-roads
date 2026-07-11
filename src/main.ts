@@ -1,5 +1,6 @@
 import './style.css';
 import * as THREE from 'three';
+import { setupTouchControls } from './utils/touchControls';
 import { createScene } from './world/scene';
 import { DayNightCycle } from './world/lighting';
 import { Snake } from './player/snake';
@@ -24,6 +25,8 @@ async function start() {
   const snake = new Snake();
   snake.addToScene(scene);
 
+  snake.addToScene(scene);
+  setupTouchControls();
   const chunkManager = new ChunkManager(scene, assets);
   const rabbitManager = new RabbitManager(scene, assets.rabbit);
   const birdManager = new BirdManager(scene, assets.gull);

@@ -88,7 +88,8 @@ export class Snake {
     this.heading -= turnInput * TURN_SPEED * delta;
     this.head.rotation.y = this.heading;
 
-    const wantsBoost = input.isPressed('shift') || input.isPressed(' ');
+    const wantsBoost = input.wantsBoost();
+
 
     if (wantsBoost && this.stamina > MIN_STAMINA_TO_BOOST) {
       this.isBoosting = true;

@@ -27,8 +27,6 @@ export async function loadModel(
           const center = new THREE.Vector3();
           box.getCenter(center);
 
-          // Apply the correction to the INNER model, not the outer wrapper —
-          // so the wrapper's own position stays free to be set by placement code later
           gltf.scene.position.x -= center.x;
           gltf.scene.position.z -= center.z;
           gltf.scene.position.y -= box.min.y;
@@ -51,25 +49,21 @@ export async function loadModel(
 }
 
 export interface GameAssets {
-  snake: THREE.Group;
   rabbit: THREE.Group;
   gull: THREE.Group;
   tree: THREE.Group;
   bush: THREE.Group;
-  grass: THREE.Group;
   rock: THREE.Group;
 }
 
 export async function preloadAssets(): Promise<GameAssets> {
-  const [snake, rabbit, gull, tree, bush, grass, rock] = await Promise.all([
-    loadModel('/models/snake.glb', 0.054),
+  const [rabbit, gull, tree, bush, rock] = await Promise.all([
     loadModel('/models/rabbit.glb', 0.0009),
     loadModel('/models/gull.glb', 0.0113),
     loadModel('/models/tree.glb', 0.87, true),
     loadModel('/models/bush.glb', 0.68, true),
-    loadModel('/models/grass.glb', 0.78),
     loadModel('/models/rock.glb', 0.70, true),
   ]);
 
-  return { snake, rabbit, gull, tree, bush, grass, rock };
+  return { rabbit, gull, tree, bush, rock };
 }
