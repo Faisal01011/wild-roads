@@ -122,24 +122,26 @@ export class Snake {
       this.positionHistory.pop();
     }
 
-    const totalSegments = this.segments.length;
+    let cumulativeDistance = 0;
+const totalSegments = this.segments.length;
+for (let i = 0; i < totalSegments; i++) {
+  const distanceFromTail = totalSegments - 1 - i;
+  const isTapered = distanceFromTail < TAPER_COUNT;
+  const taperFactor = isTapered
+    ? 0.35 + 0.65 * (distanceFromTail / TAPER_COUNT)
+    : 1;
 
-    for (let i = 0; i < totalSegments; i++) {
-      const targetDistance = SEGMENT_SPACING * (i + 1);
-      const point = this.getHistoryPointAtDistance(targetDistance);
-      if (point) {
-        const segmentTerrainHeight = getTerrainHeight(point.x, point.z);
-        this.segments[i].position.set(point.x, segmentTerrainHeight + SEGMENT_GROUND_OFFSET, point.z);
+  // Tapered (smaller) segments sit closer together — spacing scales with their size
+  const spacingForThisSegment = SEGMENT_SPACING * (isTapered ? Math.max(taperFactor, 0.3) : 1);
+  cumulativeDistance += spacingForThisSegment;
 
-        const distanceFromTail = totalSegments - 1 - i;
-        if (distanceFromTail < TAPER_COUNT) {
-          const taperFactor = 0.35 + 0.65 * (distanceFromTail / TAPER_COUNT);
-          this.segments[i].scale.setScalar(taperFactor);
-        } else {
-          this.segments[i].scale.setScalar(1);
-        }
-      }
-    }
+  const point = this.getHistoryPointAtDistance(cumulativeDistance);
+  if (point) {
+    const segmentTerrainHeight = getTerrainHeight(point.x, point.z);
+    this.segments[i].position.set(point.x, segmentTerrainHeight + SEGMENT_GROUND_OFFSET, point.z);
+    this.segments[i].scale.setScalar(taperFactor);
+  }
+}
   }
 
   private getHistoryPointAtDistance(distance: number): THREE.Vector3 | null {
