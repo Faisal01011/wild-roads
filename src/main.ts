@@ -5,6 +5,7 @@ import { DayNightCycle } from './world/lighting';
 import { Snake } from './player/snake';
 import { updateCameraFollow } from './world/cameraFollow';
 import { ChunkManager } from './world/chunkManager';
+import { updateGrassTrample } from './world/chunk';
 import { AnimalManager } from './entities/animalManager';
 import { updateScoreDisplay, updateStaminaBar, updateStatsDisplay, spawnScorePopup } from './utils/ui';
 import { audioManager } from './utils/audio';
@@ -16,6 +17,7 @@ const BEST_SCORE_KEY = 'wildroads_best_score';
 
 async function start() {
   const assets = await preloadAssets();
+
   document.getElementById('loading-screen')?.classList.add('hidden');
 
   const { scene, camera, renderer } = createScene();
@@ -30,20 +32,20 @@ async function start() {
   const chunkManager = new ChunkManager(scene, assets);
 
   const deerManager = new AnimalManager(scene, {
-  modelPath: '/models/Deer/Deer.gltf',
-  scaleCorrection: 0.42,
-  count: 6,
-  spawnRadius: 40,
-  despawnRadius: 60,
-  eatDistance: 1.5,
-  points: 1,
-  wanderSpeed: 1.0,
-  fleeSpeed: 4.5,
-  fleeTriggerRadius: 7,
-  groundOffset: 0.3,
-  wanderAnimationPattern: /^walk$/i,
-  fleeAnimationPattern: /^gallop$/i,
-});
+    modelPath: '/models/Deer/Deer.gltf',
+    scaleCorrection: 0.42,
+    count: 6,
+    spawnRadius: 40,
+    despawnRadius: 60,
+    eatDistance: 1.5,
+    points: 1,
+    wanderSpeed: 1.0,
+    fleeSpeed: 4.5,
+    fleeTriggerRadius: 7,
+    groundOffset: 0.3,
+    wanderAnimationPattern: /^walk$/i,
+    fleeAnimationPattern: /^gallop$/i,
+  });
 
   let score = 0;
   let animalsEaten = 0;
@@ -69,6 +71,7 @@ async function start() {
     updateCameraFollow(camera, snake, delta);
     chunkManager.update(snake.head.position);
     chunkManager.updateWind(elapsedTime);
+    updateGrassTrample(snake.head.position);
 
     distanceTraveled += previousHeadPosition.distanceTo(snake.head.position);
     previousHeadPosition.copy(snake.head.position);

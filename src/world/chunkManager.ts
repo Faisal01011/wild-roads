@@ -10,6 +10,7 @@ export class ChunkManager {
   private loadedChunks: Map<string, THREE.Mesh> = new Map();
   private loadedDecorations: Map<string, THREE.Group> = new Map();
   private loadedColliders: Map<string, RockCollider[]> = new Map();
+  private loadedGrass: Map<string, THREE.InstancedMesh[]> = new Map();
 
   constructor(scene: THREE.Scene, assets: ChunkAssets) {
     this.scene = scene;
@@ -36,10 +37,13 @@ export class ChunkManager {
           this.scene.add(chunk);
           this.loadedChunks.set(k, chunk);
 
-          const { group, rockColliders } = scatterDecorations(x, z, this.assets, chunk);
+          const { group, rockColliders, grassMeshes } = scatterDecorations(x, z, this.assets, chunk);
           this.scene.add(group);
           this.loadedDecorations.set(k, group);
           this.loadedColliders.set(k, rockColliders);
+
+          grassMeshes.forEach((mesh) => this.scene.add(mesh));
+          this.loadedGrass.set(k, grassMeshes);
         }
       }
     }
@@ -58,6 +62,14 @@ export class ChunkManager {
         }
 
         this.loadedColliders.delete(k);
+
+        const grassMeshes = this.loadedGrass.get(k);
+        if (grassMeshes) {
+          // Don't dispose geometry/material here — they're shared across all
+          // chunks via the module-level variant cache in chunk.ts
+          grassMeshes.forEach((mesh) => this.scene.remove(mesh));
+          this.loadedGrass.delete(k);
+        }
       }
     }
   }

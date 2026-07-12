@@ -133,10 +133,11 @@ export interface GameAssets {
   trees: THREE.Group[];
   bushes: THREE.Group[];
   rocks: THREE.Group[];
+  grassVariants: THREE.Group[];
 }
 
 export async function preloadAssets(): Promise<GameAssets> {
-  const [tree1, tree2, tree3, tree4, bush1, bush2, bush3, rock1, rock2, rock3] =
+  const [tree1, tree2, tree3, tree4, bush1, bush2, bush3, rock1, rock2, rock3, grassLarge, grassLargeExtruded, grassSmall] =
     await Promise.all([
       loadModel('/models/Tree1.fbx', 0.0146, true, false),
       loadModel('/models/Tree2.fbx', 0.0141, true, false),
@@ -148,11 +149,15 @@ export async function preloadAssets(): Promise<GameAssets> {
       loadModel('/models/Rock1.fbx', 0.0080, true, false),
       loadModel('/models/Rock2.fbx', 0.0112, true, false),
       loadModel('/models/Rock3.fbx', 0.0057, true, false),
+      loadModel('/models/Grass_Large.fbx', 0.0103, true, false),
+      loadModel('/models/Grass_Large_Extruded.fbx', 0.0108, true, false),
+      loadModel('/models/Grass_Small.fbx', 0.0089, true, false),
     ]);
 
   return {
     trees: [tree1, tree2, tree3, tree4],
     bushes: [bush1, bush2, bush3],
     rocks: [rock1, rock2, rock3],
+    grassVariants: [grassLarge, grassLargeExtruded, grassSmall],
   };
 }
