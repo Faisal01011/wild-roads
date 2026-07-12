@@ -258,3 +258,54 @@ canvas {
 body.is-touch-device #hud-bottom {
   bottom: 110px;
 }
+#hud-stats {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 10;
+  background: rgba(59, 42, 30, 0.72);
+  border: 1px solid rgba(212, 164, 76, 0.35);
+  backdrop-filter: blur(6px);
+  border-radius: 10px;
+  padding: 10px 16px;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 12px;
+}
+
+.stat-label {
+  color: rgba(243, 233, 210, 0.55);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.stat-value {
+  color: var(--color-parchment);
+  font-weight: 700;
+}
+
+.score-popup {
+  position: absolute;
+  top: -4px;
+  left: 100%;
+  margin-left: 8px;
+  color: var(--color-amber);
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 22px;
+  animation: popup-float 0.8s ease-out forwards;
+  pointer-events: none;
+}
+
+@keyframes popup-float {
+  0% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-30px); }
+}

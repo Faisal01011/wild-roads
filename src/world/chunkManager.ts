@@ -69,4 +69,16 @@ export class ChunkManager {
     }
     return all;
   }
+
+  updateWind(elapsedTime: number) {
+    for (const decorations of this.loadedDecorations.values()) {
+      for (const instance of decorations.children) {
+        if (instance.userData.sway) {
+          const { swayPhase, swaySpeed, swayAmount } = instance.userData;
+          instance.rotation.z = Math.sin(elapsedTime * swaySpeed + swayPhase) * swayAmount;
+          instance.rotation.x = Math.cos(elapsedTime * swaySpeed * 0.7 + swayPhase) * swayAmount * 0.5;
+        }
+      }
+    }
+  }
 }

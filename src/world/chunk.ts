@@ -8,9 +8,6 @@ const NOISE_FREQUENCY = 0.02;
 
 const noise2D = createNoise2D(() => 0.42);
 
-// Procedurally generated tileable grass texture, created once and reused
-// across every chunk's material — cheap, and avoids the per-instance cost
-// of the old InstancedMesh grass system.
 function createGrassTexture(): THREE.Texture {
   const size = 256;
   const canvas = document.createElement('canvas');
@@ -46,7 +43,7 @@ function createGrassTexture(): THREE.Texture {
 }
 
 const grassTexture = createGrassTexture();
-const TEXTURE_TILES_PER_CHUNK = 10; // how many times the texture repeats across one chunk
+const TEXTURE_TILES_PER_CHUNK = 10;
 
 export function createChunk(chunkX: number, chunkZ: number): THREE.Mesh {
   const geometry = new THREE.PlaneGeometry(
@@ -165,7 +162,8 @@ export function scatterDecorations(
     template: THREE.Group,
     salt: number,
     scaleRange: [number, number],
-    isRock: boolean
+    isRock: boolean,
+    swayAmount: number = 0
   ) => {
     const groundOffset = getGroundOffset(template);
 
@@ -192,6 +190,13 @@ export function scatterDecorations(
       instance.position.set(localX, height + groundOffset * variation, localZ);
       instance.rotation.y = rr * Math.PI * 2;
 
+      if (swayAmount > 0) {
+        instance.userData.sway = true;
+        instance.userData.swayPhase = rr * Math.PI * 2;
+        instance.userData.swaySpeed = 0.4 + rs * 0.4;
+        instance.userData.swayAmount = swayAmount;
+      }
+
       instance.traverse((child) => {
         if (child instanceof THREE.Mesh) {
           child.castShadow = true;
@@ -211,8 +216,8 @@ export function scatterDecorations(
     }
   };
 
-  placeItems(TREES_PER_CHUNK, assets.tree, 1, [0.8, 1.3], false);
-  placeItems(BUSHES_PER_CHUNK, assets.bush, 2, [0.7, 1.1], false);
+  placeItems(TREES_PER_CHUNK, assets.tree, 1, [0.8, 1.3], false, 0.025);
+  placeItems(BUSHES_PER_CHUNK, assets.bush, 2, [0.7, 1.1], false, 0.04);
   placeItems(ROCKS_PER_CHUNK, assets.rock, 4, [0.6, 1.2], true);
 
   group.position.set(worldOffsetX, 0, worldOffsetZ);
