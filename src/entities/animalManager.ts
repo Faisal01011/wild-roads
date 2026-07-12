@@ -18,6 +18,7 @@ export class AnimalManager {
   private animals: AnimatedAnimal[] = [];
   private config: SpeciesConfig;
   private loading = false;
+  private hasLoggedAnimations = false;
 
   constructor(scene: THREE.Scene, config: SpeciesConfig) {
     this.scene = scene;
@@ -25,33 +26,33 @@ export class AnimalManager {
   }
 
   private async spawnOne(nearPosition: THREE.Vector3) {
-  if (this.loading) return;
-  this.loading = true;
+    if (this.loading) return;
+    this.loading = true;
 
-  try {
-    const angle = Math.random() * Math.PI * 2;
-    const dist = this.config.spawnRadius * 0.3 + Math.random() * this.config.spawnRadius * 0.7;
-    const position = new THREE.Vector3(
-      nearPosition.x + Math.cos(angle) * dist,
-      this.config.groundOffset,
-      nearPosition.z + Math.sin(angle) * dist
-    );
+    try {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = this.config.spawnRadius * 0.3 + Math.random() * this.config.spawnRadius * 0.7;
+      const position = new THREE.Vector3(
+        nearPosition.x + Math.cos(angle) * dist,
+        this.config.groundOffset,
+        nearPosition.z + Math.sin(angle) * dist
+      );
 
-    const model = await loadModel(this.config.modelPath, this.config.scaleCorrection, false, false, true);
+      const model = await loadModel(this.config.modelPath, this.config.scaleCorrection, false, false, true);
 
-    // Fetch animations only after load has definitely completed, so the cache is populated
-    const animations = getModelAnimations(this.config.modelPath);
-    if (this.animals.length === 0) {
-      console.log(`Animations found for ${this.config.modelPath}:`, animations.map((a) => a.name));
+      const animations = getModelAnimations(this.config.modelPath);
+      if (!this.hasLoggedAnimations) {
+        console.log(`Animations found for ${this.config.modelPath}:`, animations.map((a) => a.name));
+        this.hasLoggedAnimations = true;
+      }
+
+      const animal = new AnimatedAnimal(position, model, animations, this.config);
+      this.animals.push(animal);
+      this.scene.add(animal.mesh);
+    } finally {
+      this.loading = false;
     }
-
-    const animal = new AnimatedAnimal(position, model, animations, this.config);
-    this.animals.push(animal);
-    this.scene.add(animal.mesh);
-  } finally {
-    this.loading = false;
   }
-}
 
   private removeAnimal(index: number) {
     const animal = this.animals[index];

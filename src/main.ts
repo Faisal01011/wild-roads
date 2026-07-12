@@ -16,7 +16,6 @@ const BEST_SCORE_KEY = 'wildroads_best_score';
 
 async function start() {
   const assets = await preloadAssets();
-
   document.getElementById('loading-screen')?.classList.add('hidden');
 
   const { scene, camera, renderer } = createScene();
@@ -37,7 +36,7 @@ async function start() {
   spawnRadius: 40,
   despawnRadius: 60,
   eatDistance: 1.5,
-  points: 5,
+  points: 1,
   wanderSpeed: 1.0,
   fleeSpeed: 4.5,
   fleeTriggerRadius: 7,

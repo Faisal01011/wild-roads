@@ -104,9 +104,9 @@ function sampleHeightOnMesh(mesh: THREE.Mesh, worldX: number, worldZ: number): n
 }
 
 export interface ChunkAssets {
-  tree: THREE.Group;
-  bush: THREE.Group;
-  rock: THREE.Group;
+  trees: THREE.Group[];
+  bushes: THREE.Group[];
+  rocks: THREE.Group[];
 }
 
 export interface RockCollider {
@@ -155,23 +155,26 @@ export function scatterDecorations(
   const worldOffsetX = chunkX * CHUNK_SIZE;
   const worldOffsetZ = chunkZ * CHUNK_SIZE;
 
-  const rockBaseRadius = getHorizontalRadius(assets.rock);
 
   const placeItems = (
-    count: number,
-    template: THREE.Group,
-    salt: number,
-    scaleRange: [number, number],
-    isRock: boolean,
-    swayAmount: number = 0
-  ) => {
-    const groundOffset = getGroundOffset(template);
+  count: number,
+  templates: THREE.Group[],
+  salt: number,
+  scaleRange: [number, number],
+  isRock: boolean,
+  swayAmount: number = 0
+) => {
+  for (let i = 0; i < count; i++) {
+    const rx = seededRandom(chunkX, chunkZ, salt + i * 2.1);
+    const rz = seededRandom(chunkX, chunkZ, salt + i * 2.1 + 0.5);
+    const rs = seededRandom(chunkX, chunkZ, salt + i * 2.1 + 0.9);
+    const rr = seededRandom(chunkX, chunkZ, salt + i * 2.1 + 1.3);
+    const rv = seededRandom(chunkX, chunkZ, salt + i * 2.1 + 1.7);
 
-    for (let i = 0; i < count; i++) {
-      const rx = seededRandom(chunkX, chunkZ, salt + i * 2.1);
-      const rz = seededRandom(chunkX, chunkZ, salt + i * 2.1 + 0.5);
-      const rs = seededRandom(chunkX, chunkZ, salt + i * 2.1 + 0.9);
-      const rr = seededRandom(chunkX, chunkZ, salt + i * 2.1 + 1.3);
+    const variantIndex = Math.floor(rv * templates.length);
+    const template = templates[variantIndex];
+    const groundOffset = getGroundOffset(template);
+    const rockBaseRadius = isRock ? getHorizontalRadius(template) : 0;
 
       const localX = (rx - 0.5) * CHUNK_SIZE;
       const localZ = (rz - 0.5) * CHUNK_SIZE;
@@ -216,9 +219,9 @@ export function scatterDecorations(
     }
   };
 
-  placeItems(TREES_PER_CHUNK, assets.tree, 1, [0.8, 1.3], false, 0.025);
-  placeItems(BUSHES_PER_CHUNK, assets.bush, 2, [0.7, 1.1], false, 0.04);
-  placeItems(ROCKS_PER_CHUNK, assets.rock, 4, [0.6, 1.2], true);
+  placeItems(TREES_PER_CHUNK, assets.trees, 1, [0.8, 1.3], false, 0.025);
+  placeItems(BUSHES_PER_CHUNK, assets.bushes, 2, [0.7, 1.1], false, 0.04);
+  placeItems(ROCKS_PER_CHUNK, assets.rocks, 4, [0.6, 1.2], true);
 
   group.position.set(worldOffsetX, 0, worldOffsetZ);
   return { group, rockColliders };
