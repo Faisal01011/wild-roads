@@ -1,7 +1,9 @@
 import './style.css';
+import './style.css';
 import * as THREE from 'three';
 import { createScene } from './world/scene';
 import { DayNightCycle } from './world/lighting';
+import { SkyObjects } from './world/sky';
 import { Snake } from './player/snake';
 import { updateCameraFollow } from './world/cameraFollow';
 import { ChunkManager } from './world/chunkManager';
@@ -27,7 +29,6 @@ function showMenu(mode: 'start' | 'pause') {
 
   if (menu) {
     menu.style.display = 'flex';
-    // Force a reflow so the opacity transition actually plays after re-enabling display
     void menu.offsetWidth;
     menu.classList.remove('hidden');
   }
@@ -82,10 +83,10 @@ function setupMainMenu(onPlay: () => void, onResume: () => void) {
   });
 
   btnResume?.addEventListener('click', () => {
-  isPaused = false;
-  hideMenu();
-  onResume();
-});
+    isPaused = false;
+    hideMenu();
+    onResume();
+  });
 
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && gameStarted) {
@@ -125,6 +126,7 @@ function beginGame(assets: GameAssets) {
   renderer.shadowMap.enabled = true;
 
   const dayNightCycle = new DayNightCycle(scene);
+  const skyObjects = new SkyObjects(scene);
 
   const snake = new Snake();
   snake.addToScene(scene);
@@ -164,7 +166,7 @@ function beginGame(assets: GameAssets) {
     requestAnimationFrame(animate);
 
     if (isPaused) {
-      renderer.render(scene, camera); // keep the last frame visible behind the pause menu
+      renderer.render(scene, camera);
       return;
     }
 
@@ -174,6 +176,8 @@ function beginGame(assets: GameAssets) {
     updateFpsCounter();
 
     dayNightCycle.update(delta);
+    skyObjects.update(delta, dayNightCycle.sunAngle, dayNightCycle.sunHeightFactor, snake.head.position);
+
     const rockColliders = chunkManager.getRockColliders();
     snake.update(delta, rockColliders);
     updateCameraFollow(camera, snake, delta);

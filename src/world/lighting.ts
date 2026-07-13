@@ -4,8 +4,8 @@ export class DayNightCycle {
   private sun: THREE.DirectionalLight;
   private ambient: THREE.AmbientLight;
   private scene: THREE.Scene;
-  private time: number = 0.3; // 0 = midnight, 0.5 = noon, 1 = midnight again
-  private readonly CYCLE_DURATION = 300; // full day length in seconds — tune to taste
+  private time: number = 0.3;
+  private readonly CYCLE_DURATION = 120;
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
@@ -22,7 +22,15 @@ export class DayNightCycle {
     this.sun.shadow.camera.bottom = -50;
     scene.add(this.sun);
 
-    this.applyTimeOfDay(); // set initial state immediately
+    this.applyTimeOfDay();
+  }
+
+  get sunAngle(): number {
+    return this.time * Math.PI * 2;
+  }
+
+  get sunHeightFactor(): number {
+    return Math.sin(this.time * Math.PI * 2);
   }
 
   update(delta: number) {
@@ -33,23 +41,20 @@ export class DayNightCycle {
   }
 
   private applyTimeOfDay() {
-    // Sun angle: full circle over the day, peaking overhead at time = 0.5
     const angle = this.time * Math.PI * 2;
     const sunHeight = Math.sin(angle);
     const sunDistance = 80;
 
     this.sun.position.set(
       Math.cos(angle) * sunDistance,
-      Math.max(sunHeight, 0.05) * sunDistance, // never let it go fully below the horizon visually
+      Math.max(sunHeight, 0.05) * sunDistance,
       30
     );
 
-    // Brightness: full during day, dim at night
     const brightness = Math.max(sunHeight, 0.1);
     this.sun.intensity = brightness * 1.1;
     this.ambient.intensity = 0.2 + brightness * 0.4;
 
-    // Sky color: blue at day, deep navy at night, orange tint at sunrise/sunset
     const dayColor = new THREE.Color(0x87ceeb);
     const nightColor = new THREE.Color(0x0a0e2a);
     const sunsetColor = new THREE.Color(0xff8c42);
@@ -58,7 +63,6 @@ export class DayNightCycle {
     if (sunHeight > 0.3) {
       skyColor = dayColor;
     } else if (sunHeight > -0.1) {
-      // Blend toward sunset color near the horizon
       const t = (sunHeight - -0.1) / (0.3 - -0.1);
       skyColor = nightColor.clone().lerp(sunsetColor, Math.min(t, 1));
       if (sunHeight > 0.1) {
@@ -69,8 +73,9 @@ export class DayNightCycle {
     }
 
     this.scene.background = skyColor;
+
     if (this.scene.fog instanceof THREE.Fog) {
-  this.scene.fog.color = skyColor;
-}
+      this.scene.fog.color = skyColor;
+    }
   }
 }
