@@ -10,16 +10,55 @@ import { AnimalManager } from './entities/animalManager';
 import { updateScoreDisplay, updateStaminaBar, updateStatsDisplay, spawnScorePopup } from './utils/ui';
 import { audioManager } from './utils/audio';
 import { preloadAssets } from './utils/assetLoader';
+import type { GameAssets } from './utils/assetLoader';
 import { setupTouchControls } from './utils/touchControls';
 import { triggerShake, spawnEatBurst, updateBursts } from './utils/effects';
+import { updateFpsCounter } from './utils/fpsCounter';
 
 const BEST_SCORE_KEY = 'wildroads_best_score';
+
+function setupMainMenu(onPlay: () => void) {
+  const menu = document.getElementById('main-menu');
+  const panelMain = document.getElementById('menu-panel-main');
+  const panelOptions = document.getElementById('menu-panel-options');
+  const btnPlay = document.getElementById('btn-play');
+  const btnOptions = document.getElementById('btn-options');
+  const btnBack = document.getElementById('btn-back');
+  const btnToggleSound = document.getElementById('btn-toggle-sound');
+
+  btnOptions?.addEventListener('click', () => {
+    panelMain?.classList.add('menu-panel-hidden');
+    panelOptions?.classList.remove('menu-panel-hidden');
+  });
+
+  btnBack?.addEventListener('click', () => {
+    panelOptions?.classList.add('menu-panel-hidden');
+    panelMain?.classList.remove('menu-panel-hidden');
+  });
+
+  btnToggleSound?.addEventListener('click', () => {
+    const muted = audioManager.toggleMute();
+    if (btnToggleSound) {
+      btnToggleSound.textContent = muted ? 'Sound: Off' : 'Sound: On';
+    }
+  });
+
+  btnPlay?.addEventListener('click', () => {
+    audioManager.startAmbient();
+    menu?.classList.add('hidden');
+    onPlay();
+  });
+}
 
 async function start() {
   const assets = await preloadAssets();
 
   document.getElementById('loading-screen')?.classList.add('hidden');
 
+  setupMainMenu(() => beginGame(assets));
+}
+
+function beginGame(assets: GameAssets) {
   const { scene, camera, renderer } = createScene();
   renderer.shadowMap.enabled = true;
 
@@ -65,12 +104,18 @@ async function start() {
     const delta = clock.getDelta();
     elapsedTime += delta;
 
+    updateFpsCounter();
+
     dayNightCycle.update(delta);
     const rockColliders = chunkManager.getRockColliders();
     snake.update(delta, rockColliders);
     updateCameraFollow(camera, snake, delta);
     chunkManager.update(snake.head.position);
-    chunkManager.updateWind(elapsedTime);
+
+    if (Math.floor(elapsedTime * 20) !== Math.floor((elapsedTime - delta) * 20)) {
+      chunkManager.updateWind(elapsedTime);
+    }
+
     updateGrassTrample(snake.head.position);
 
     distanceTraveled += previousHeadPosition.distanceTo(snake.head.position);

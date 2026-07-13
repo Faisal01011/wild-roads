@@ -15,7 +15,7 @@ export class DayNightCycle {
 
     this.sun = new THREE.DirectionalLight(0xffffff, 1);
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
+    this.sun.shadow.mapSize.set(1024, 1024);
     this.sun.shadow.camera.left = -50;
     this.sun.shadow.camera.right = 50;
     this.sun.shadow.camera.top = 50;

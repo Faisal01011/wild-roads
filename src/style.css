@@ -309,3 +309,110 @@ body.is-touch-device #hud-bottom {
   0% { opacity: 1; transform: translateY(0); }
   100% { opacity: 0; transform: translateY(-30px); }
 }
+/* ---------- Main menu ---------- */
+
+#main-menu {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-deep);
+  overflow: hidden;
+  transition: opacity 0.5s ease;
+  opacity: 1;
+}
+
+#main-menu.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.menu-bg {
+  position: absolute;
+  inset: -10%;
+  background:
+    radial-gradient(circle at 25% 25%, rgba(212, 164, 76, 0.2), transparent 40%),
+    radial-gradient(circle at 75% 75%, rgba(45, 74, 36, 0.9), transparent 45%),
+    radial-gradient(circle at 50% 100%, rgba(59, 42, 30, 0.8), transparent 50%);
+  filter: blur(60px);
+}
+
+.menu-content {
+  position: relative;
+  text-align: center;
+  padding: 0 24px;
+}
+
+.menu-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: clamp(48px, 10vw, 100px);
+  line-height: 0.85;
+  letter-spacing: 0.04em;
+  color: var(--color-amber);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.3), 0 12px 40px rgba(212, 164, 76, 0.25);
+  margin-bottom: 40px;
+}
+
+.menu-title span {
+  display: block;
+  color: var(--color-parchment);
+  font-size: 0.7em;
+  letter-spacing: 0.15em;
+}
+
+.menu-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.menu-panel-hidden {
+  display: none;
+}
+
+.menu-btn {
+  font-family: 'Nunito Sans', sans-serif;
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-bg-deep);
+  background: var(--color-amber);
+  border: none;
+  border-radius: 8px;
+  padding: 14px 48px;
+  min-width: 220px;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.menu-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(212, 164, 76, 0.35);
+}
+
+.menu-btn:active {
+  transform: translateY(0);
+}
+
+.menu-btn-secondary {
+  background: transparent;
+  color: var(--color-parchment);
+  border: 1px solid rgba(243, 233, 210, 0.35);
+}
+
+.menu-btn-secondary:hover {
+  box-shadow: none;
+  border-color: var(--color-amber);
+}
+
+.menu-hint {
+  margin-top: 36px;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(243, 233, 210, 0.45);
+}
