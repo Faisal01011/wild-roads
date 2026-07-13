@@ -122,7 +122,7 @@ export interface ChunkDecorations {
 const TREES_PER_CHUNK = 4;
 const BUSHES_PER_CHUNK = 3;
 const ROCKS_PER_CHUNK = 2;
-const GRASS_PER_CHUNK = 1500;
+const GRASS_PER_CHUNK = 500;
 const SPAWN_CLEAR_RADIUS = 8;
 
 function seededRandom(x: number, z: number, salt: number): number {

@@ -1,5 +1,10 @@
 import * as THREE from 'three';
 
+const DAY_COLOR = new THREE.Color(0x87ceeb);
+const NIGHT_COLOR = new THREE.Color(0x0a0e2a);
+const SUNSET_COLOR = new THREE.Color(0xff8c42);
+const skyColorResult = new THREE.Color(); // reused every frame instead of allocated
+
 export class DayNightCycle {
   private sun: THREE.DirectionalLight;
   private ambient: THREE.AmbientLight;
@@ -55,27 +60,25 @@ export class DayNightCycle {
     this.sun.intensity = brightness * 1.1;
     this.ambient.intensity = 0.2 + brightness * 0.4;
 
-    const dayColor = new THREE.Color(0x87ceeb);
-    const nightColor = new THREE.Color(0x0a0e2a);
-    const sunsetColor = new THREE.Color(0xff8c42);
-
-    let skyColor: THREE.Color;
     if (sunHeight > 0.3) {
-      skyColor = dayColor;
+      skyColorResult.copy(DAY_COLOR);
     } else if (sunHeight > -0.1) {
       const t = (sunHeight - -0.1) / (0.3 - -0.1);
-      skyColor = nightColor.clone().lerp(sunsetColor, Math.min(t, 1));
+      skyColorResult.copy(NIGHT_COLOR).lerp(SUNSET_COLOR, Math.min(t, 1));
       if (sunHeight > 0.1) {
-        skyColor = sunsetColor.clone().lerp(dayColor, (sunHeight - 0.1) / 0.2);
+        skyColorResult.copy(SUNSET_COLOR).lerp(DAY_COLOR, (sunHeight - 0.1) / 0.2);
       }
     } else {
-      skyColor = nightColor;
+      skyColorResult.copy(NIGHT_COLOR);
     }
 
-    this.scene.background = skyColor;
+    if (!this.scene.background || !(this.scene.background as THREE.Color).equals) {
+      this.scene.background = new THREE.Color();
+    }
+    (this.scene.background as THREE.Color).copy(skyColorResult);
 
     if (this.scene.fog instanceof THREE.Fog) {
-      this.scene.fog.color = skyColor;
+      this.scene.fog.color.copy(skyColorResult);
     }
   }
 }
