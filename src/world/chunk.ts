@@ -192,6 +192,7 @@ function getGrassVariant(template: THREE.Group): GrassVariant | null {
   const tipHeight = mesh.geometry.boundingBox ? mesh.geometry.boundingBox.max.y : 1;
 
   const material = (mesh.material as THREE.MeshStandardMaterial).clone();
+  material.color = new THREE.Color(0x4caf50);
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uTramplePos = trampleUniforms.uTramplePos;
     shader.uniforms.uTrampleRadius = trampleUniforms.uTrampleRadius;
