@@ -118,7 +118,7 @@ export interface ChunkDecorations {
 const TREES_PER_CHUNK = 4;
 const BUSHES_PER_CHUNK = 3;
 const ROCKS_PER_CHUNK = 2;
-const GRASS_PER_CHUNK = 220;
+const GRASS_PER_CHUNK = 3000;
 const SPAWN_CLEAR_RADIUS = 8;
 
 function seededRandom(x: number, z: number, salt: number): number {
@@ -264,8 +264,8 @@ function createGrassForChunk(
 
       const cellCenterX = -CHUNK_SIZE / 2 + gx * cellSize + cellSize / 2;
       const cellCenterZ = -CHUNK_SIZE / 2 + gz * cellSize + cellSize / 2;
-      const localX = cellCenterX + (jitterX - 0.5) * cellSize * 0.7;
-      const localZ = cellCenterZ + (jitterZ - 0.5) * cellSize * 0.7;
+      const localX = cellCenterX + (jitterX - 0.5) * cellSize * 0.45;
+      const localZ = cellCenterZ + (jitterZ - 0.5) * cellSize * 0.45;
 
       const worldX = worldOffsetX + localX;
       const worldZ = worldOffsetZ + localZ;

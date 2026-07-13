@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { createChunk, scatterDecorations, CHUNK_SIZE } from './chunk';
 import type { ChunkAssets, RockCollider } from './chunk';
 
-const LOAD_RADIUS = 3;
+const LOAD_RADIUS = 1;
 
 export class ChunkManager {
   private scene: THREE.Scene;
