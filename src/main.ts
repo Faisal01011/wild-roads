@@ -160,12 +160,11 @@ function beginGame(assets: GameAssets) {
     fleeTriggerRadius: 9,
     groundOffset: 0.25,
     wanderAnimationPattern: /^walk$/i,
-    fleeAnimationPattern: /^run$/i, // adjust once real clip names are confirmed in console
+    fleeAnimationPattern: /^gallop$/i, // adjust once real clip names are confirmed in console
     isPredator: true,
     catchDistance: 1.3,
     attackCooldownSeconds: 2.5,
   });
-
   let score = 0;
   let animalsEaten = 0;
   let distanceTraveled = 0;
