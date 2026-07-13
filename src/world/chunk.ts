@@ -15,16 +15,20 @@ function createGrassGroundTexture(): THREE.Texture {
   canvas.height = size;
   const ctx = canvas.getContext('2d')!;
 
-  ctx.fillStyle = '#4caf50';
-  ctx.fillRect(0, 0, size, size);
+  ctx.fillStyle = '#3a5c34';
+ctx.fillRect(0, 0, size, size);
 
-  const bladeCount = 2500;
-  for (let i = 0; i < bladeCount; i++) {
-    const x = Math.random() * size;
-    const y = Math.random() * size;
-    const shadeRoll = Math.random();
-    const color =
-      shadeRoll < 0.35 ? '#3d8b40' : shadeRoll < 0.7 ? '#5cbf5f' : '#4caf50';
+const bladeCount = 2500;
+for (let i = 0; i < bladeCount; i++) {
+  const x = Math.random() * size;
+  const y = Math.random() * size;
+  const shadeRoll = Math.random();
+  const color =
+    shadeRoll < 0.25 ? '#2e4a29' :   // deep shadowed moss
+    shadeRoll < 0.5 ? '#4a6b3e' :    // mid olive-green
+    shadeRoll < 0.7 ? '#5a7548' :    // lighter grass-brown blend
+    shadeRoll < 0.85 ? '#3d5a35' :   // another mid tone for variety
+    '#4d3f2a';                        // occasional dirt/brown fleck
 
     ctx.save();
     ctx.translate(x, y);
