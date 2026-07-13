@@ -17,11 +17,43 @@ import { updateFpsCounter } from './utils/fpsCounter';
 
 const BEST_SCORE_KEY = 'wildroads_best_score';
 
-function setupMainMenu(onPlay: () => void) {
+let isPaused = false;
+let gameStarted = false;
+
+function showMenu(mode: 'start' | 'pause') {
   const menu = document.getElementById('main-menu');
+  const btnPlay = document.getElementById('btn-play');
+  const btnResume = document.getElementById('btn-resume');
+
+  if (menu) {
+    menu.style.display = 'flex';
+    // Force a reflow so the opacity transition actually plays after re-enabling display
+    void menu.offsetWidth;
+    menu.classList.remove('hidden');
+  }
+
+  if (mode === 'pause') {
+    btnPlay?.classList.add('menu-btn-hidden');
+    btnResume?.classList.remove('menu-btn-hidden');
+  } else {
+    btnPlay?.classList.remove('menu-btn-hidden');
+    btnResume?.classList.add('menu-btn-hidden');
+  }
+}
+
+function hideMenu() {
+  const menu = document.getElementById('main-menu');
+  menu?.classList.add('hidden');
+  setTimeout(() => {
+    if (menu) menu.style.display = 'none';
+  }, 500);
+}
+
+function setupMainMenu(onPlay: () => void, onResume: () => void) {
   const panelMain = document.getElementById('menu-panel-main');
   const panelOptions = document.getElementById('menu-panel-options');
   const btnPlay = document.getElementById('btn-play');
+  const btnResume = document.getElementById('btn-resume');
   const btnOptions = document.getElementById('btn-options');
   const btnBack = document.getElementById('btn-back');
   const btnToggleSound = document.getElementById('btn-toggle-sound');
@@ -45,20 +77,50 @@ function setupMainMenu(onPlay: () => void) {
 
   btnPlay?.addEventListener('click', () => {
     audioManager.startAmbient();
-    menu?.classList.add('hidden');
+    hideMenu();
     onPlay();
+  });
+
+  btnResume?.addEventListener('click', () => {
+  isPaused = false;
+  hideMenu();
+  onResume();
+});
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && gameStarted) {
+      if (isPaused) {
+        isPaused = false;
+        hideMenu();
+        onResume();
+      } else {
+        isPaused = true;
+        showMenu('pause');
+      }
+    }
   });
 }
 
 async function start() {
   const assets = await preloadAssets();
 
-  document.getElementById('loading-screen')?.classList.add('hidden');
+  const loadingScreen = document.getElementById('loading-screen');
+  loadingScreen?.classList.add('hidden');
+  setTimeout(() => {
+    if (loadingScreen) loadingScreen.style.display = 'none';
+  }, 700);
 
-  setupMainMenu(() => beginGame(assets));
+  setupMainMenu(
+    () => beginGame(assets),
+    () => {
+      /* resume handled via isPaused flag inside the animate loop */
+    }
+  );
 }
 
 function beginGame(assets: GameAssets) {
+  gameStarted = true;
+
   const { scene, camera, renderer } = createScene();
   renderer.shadowMap.enabled = true;
 
@@ -100,6 +162,11 @@ function beginGame(assets: GameAssets) {
 
   function animate() {
     requestAnimationFrame(animate);
+
+    if (isPaused) {
+      renderer.render(scene, camera); // keep the last frame visible behind the pause menu
+      return;
+    }
 
     const delta = clock.getDelta();
     elapsedTime += delta;

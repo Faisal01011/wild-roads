@@ -416,3 +416,6 @@ body.is-touch-device #hud-bottom {
   text-transform: uppercase;
   color: rgba(243, 233, 210, 0.45);
 }
+.menu-btn-hidden {
+  display: none;
+}
