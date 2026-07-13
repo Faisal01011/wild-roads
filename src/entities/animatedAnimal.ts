@@ -8,9 +8,12 @@ export interface AnimalConfig {
   groundOffset: number;
   wanderAnimationPattern?: RegExp;
   fleeAnimationPattern?: RegExp;
+  isPredator?: boolean;
+  catchDistance?: number;
+  attackCooldownSeconds?: number;
 }
 
-type AnimalState = 'wander' | 'flee';
+type AnimalState = 'wander' | 'alert';
 
 export class AnimatedAnimal {
   public mesh: THREE.Object3D;
@@ -19,9 +22,10 @@ export class AnimatedAnimal {
   private timeUntilDirectionChange: number;
   private mixer: THREE.AnimationMixer | null = null;
   private wanderAction: THREE.AnimationAction | null = null;
-  private fleeAction: THREE.AnimationAction | null = null;
+  private alertAction: THREE.AnimationAction | null = null;
   private config: AnimalConfig;
   private directionChangeInterval = 3;
+  private attackCooldown = 0;
 
   constructor(
     position: THREE.Vector3,
@@ -39,7 +43,7 @@ export class AnimatedAnimal {
       const wanderClip = config.wanderAnimationPattern
         ? animations.find((a) => config.wanderAnimationPattern!.test(a.name))
         : animations[0];
-      const fleeClip = config.fleeAnimationPattern
+      const alertClip = config.fleeAnimationPattern
         ? animations.find((a) => config.fleeAnimationPattern!.test(a.name))
         : wanderClip;
 
@@ -47,13 +51,11 @@ export class AnimatedAnimal {
         this.wanderAction = this.mixer.clipAction(wanderClip);
         this.wanderAction.play();
       }
-      if (fleeClip) {
-        this.fleeAction = this.mixer.clipAction(fleeClip);
-        if (fleeClip === wanderClip) {
-          // Same clip reused for both states — nothing extra to do, already playing
-        } else {
-          this.fleeAction.setEffectiveWeight(0);
-          this.fleeAction.play();
+      if (alertClip) {
+        this.alertAction = this.mixer.clipAction(alertClip);
+        if (alertClip !== wanderClip) {
+          this.alertAction.setEffectiveWeight(0);
+          this.alertAction.play();
         }
       }
     }
@@ -71,13 +73,14 @@ export class AnimatedAnimal {
     return this.directionChangeInterval * (0.5 + Math.random());
   }
 
-  update(delta: number, snakeHeadPosition: THREE.Vector3) {
+  // Returns true if this update caused a catch of the player (predators only)
+  update(delta: number, snakeHeadPosition: THREE.Vector3): boolean {
     const distanceToSnake = this.mesh.position.distanceTo(snakeHeadPosition);
     const previousState = this.state;
 
     if (distanceToSnake < this.config.fleeTriggerRadius) {
-      this.state = 'flee';
-    } else if (this.state === 'flee') {
+      this.state = 'alert';
+    } else if (this.state === 'alert') {
       this.state = 'wander';
     }
 
@@ -85,15 +88,13 @@ export class AnimatedAnimal {
       this.crossfadeToState(this.state);
     }
 
-    if (this.state === 'flee') {
-      const fleeDirection = this.mesh.position
-        .clone()
-        .sub(snakeHeadPosition)
-        .setY(0)
-        .normalize();
+    if (this.state === 'alert') {
+      const moveDirection = this.config.isPredator
+        ? snakeHeadPosition.clone().sub(this.mesh.position).setY(0).normalize()
+        : this.mesh.position.clone().sub(snakeHeadPosition).setY(0).normalize();
 
-      this.mesh.position.addScaledVector(fleeDirection, this.config.fleeSpeed * delta);
-      this.faceDirection(fleeDirection);
+      this.mesh.position.addScaledVector(moveDirection, this.config.fleeSpeed * delta);
+      this.faceDirection(moveDirection);
     } else {
       this.timeUntilDirectionChange -= delta;
       if (this.timeUntilDirectionChange <= 0) {
@@ -111,19 +112,33 @@ export class AnimatedAnimal {
     if (this.mixer) {
       this.mixer.update(delta);
     }
+
+    this.attackCooldown = Math.max(0, this.attackCooldown - delta);
+
+    if (
+      this.config.isPredator &&
+      this.state === 'alert' &&
+      this.attackCooldown <= 0 &&
+      distanceToSnake < (this.config.catchDistance ?? 1.3)
+    ) {
+      this.attackCooldown = this.config.attackCooldownSeconds ?? 2.5;
+      return true;
+    }
+
+    return false;
   }
 
   private crossfadeToState(state: AnimalState) {
-    if (!this.wanderAction || !this.fleeAction || this.wanderAction === this.fleeAction) return;
+    if (!this.wanderAction || !this.alertAction || this.wanderAction === this.alertAction) return;
 
-    if (state === 'flee') {
-      this.fleeAction.reset().play();
-      this.fleeAction.setEffectiveWeight(1);
-      this.wanderAction.crossFadeTo(this.fleeAction, 0.3, false);
+    if (state === 'alert') {
+      this.alertAction.reset().play();
+      this.alertAction.setEffectiveWeight(1);
+      this.wanderAction.crossFadeTo(this.alertAction, 0.3, false);
     } else {
       this.wanderAction.reset().play();
       this.wanderAction.setEffectiveWeight(1);
-      this.fleeAction.crossFadeTo(this.wanderAction, 0.3, false);
+      this.alertAction.crossFadeTo(this.wanderAction, 0.3, false);
     }
   }
 

@@ -419,3 +419,6 @@ body.is-touch-device #hud-bottom {
 .menu-btn-hidden {
   display: none;
 }
+.score-popup-negative {
+  color: #e05a4e;
+}

@@ -13,6 +13,11 @@ export interface SpeciesConfig extends AnimalConfig {
   points: number;
 }
 
+export interface AnimalManagerResult {
+  eatenPoints: number;
+  attacks: number;
+}
+
 export class AnimalManager {
   private scene: THREE.Scene;
   private animals: AnimatedAnimal[] = [];
@@ -61,18 +66,22 @@ export class AnimalManager {
     this.animals.splice(index, 1);
   }
 
-  update(delta: number, snakeHeadPosition: THREE.Vector3): number {
+  update(delta: number, snakeHeadPosition: THREE.Vector3): AnimalManagerResult {
     let eatenPoints = 0;
+    let attacks = 0;
 
     for (const animal of this.animals) {
-      animal.update(delta, snakeHeadPosition);
+      const caught = animal.update(delta, snakeHeadPosition);
+      if (caught) attacks++;
     }
 
-    for (let i = this.animals.length - 1; i >= 0; i--) {
-      const distance = this.animals[i].mesh.position.distanceTo(snakeHeadPosition);
-      if (distance < this.config.eatDistance) {
-        this.removeAnimal(i);
-        eatenPoints += this.config.points;
+    if (!this.config.isPredator) {
+      for (let i = this.animals.length - 1; i >= 0; i--) {
+        const distance = this.animals[i].mesh.position.distanceTo(snakeHeadPosition);
+        if (distance < this.config.eatDistance) {
+          this.removeAnimal(i);
+          eatenPoints += this.config.points;
+        }
       }
     }
 
@@ -87,6 +96,6 @@ export class AnimalManager {
       this.spawnOne(snakeHeadPosition);
     }
 
-    return eatenPoints;
+    return { eatenPoints, attacks };
   }
 }

@@ -113,6 +113,26 @@ export class Snake {
     scene.add(newestShadow);
   }
 
+  shrink(scene: THREE.Scene, count: number = 1) {
+  for (let i = 0; i < count; i++) {
+    if (this.segments.length <= 1) break;
+
+    const segment = this.segments.pop();
+    const shadow = this.segmentShadows.pop();
+
+    if (segment) {
+      scene.remove(segment);
+      segment.geometry.dispose();
+      (segment.material as THREE.Material).dispose();
+    }
+    if (shadow) {
+      scene.remove(shadow);
+      shadow.geometry.dispose();
+      (shadow.material as THREE.Material).dispose();
+    }
+  }
+}
+
   get length(): number {
     return this.segments.length;
   }

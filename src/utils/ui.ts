@@ -21,9 +21,8 @@ export function updateStatsDisplay(distance: number, eaten: number, best: number
 
 export function spawnScorePopup(amount: number) {
   const popup = document.createElement('span');
-  popup.className = 'score-popup';
-  popup.textContent = `+${amount}`;
-  scorePanel.style.position = 'relative';
+  popup.className = 'score-popup' + (amount < 0 ? ' score-popup-negative' : '');
+  popup.textContent = amount > 0 ? `+${amount}` : `${amount}`;
   scorePanel.appendChild(popup);
   setTimeout(() => popup.remove(), 800);
 }

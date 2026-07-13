@@ -1,5 +1,4 @@
 import './style.css';
-import './style.css';
 import * as THREE from 'three';
 import { createScene } from './world/scene';
 import { DayNightCycle } from './world/lighting';
@@ -113,9 +112,7 @@ async function start() {
 
   setupMainMenu(
     () => beginGame(assets),
-    () => {
-      /* resume handled via isPaused flag inside the animate loop */
-    }
+    () => {}
   );
 }
 
@@ -148,6 +145,25 @@ function beginGame(assets: GameAssets) {
     groundOffset: 0.3,
     wanderAnimationPattern: /^walk$/i,
     fleeAnimationPattern: /^gallop$/i,
+  });
+
+  const wolfManager = new AnimalManager(scene, {
+    modelPath: '/models/Wolf/Wolf.gltf',
+    scaleCorrection: 0.41,
+    count: 3,
+    spawnRadius: 50,
+    despawnRadius: 65,
+    eatDistance: 0, // unused for predators
+    points: 0, // unused for predators
+    wanderSpeed: 0.9,
+    fleeSpeed: 5.5,
+    fleeTriggerRadius: 9,
+    groundOffset: 0.25,
+    wanderAnimationPattern: /^walk$/i,
+    fleeAnimationPattern: /^run$/i, // adjust once real clip names are confirmed in console
+    isPredator: true,
+    catchDistance: 1.3,
+    attackCooldownSeconds: 2.5,
   });
 
   let score = 0;
@@ -192,18 +208,19 @@ function beginGame(assets: GameAssets) {
     distanceTraveled += previousHeadPosition.distanceTo(snake.head.position);
     previousHeadPosition.copy(snake.head.position);
 
-    const pointsEarned = deerManager.update(delta, snake.head.position);
+    const deerResult = deerManager.update(delta, snake.head.position);
+    const wolfResult = wolfManager.update(delta, snake.head.position);
 
-    if (pointsEarned > 0) {
-      for (let i = 0; i < pointsEarned; i++) {
+    if (deerResult.eatenPoints > 0) {
+      for (let i = 0; i < deerResult.eatenPoints; i++) {
         snake.grow(scene);
       }
 
-      score += pointsEarned;
+      score += deerResult.eatenPoints;
       animalsEaten += 1;
 
       updateScoreDisplay(score);
-      spawnScorePopup(pointsEarned);
+      spawnScorePopup(deerResult.eatenPoints);
       audioManager.playEat();
       triggerShake(0.15);
       spawnEatBurst(scene, snake.head.position);
@@ -212,6 +229,15 @@ function beginGame(assets: GameAssets) {
         bestScore = score;
         localStorage.setItem(BEST_SCORE_KEY, String(bestScore));
       }
+    }
+
+    if (wolfResult.attacks > 0) {
+      snake.shrink(scene, wolfResult.attacks);
+      score = Math.max(0, score - wolfResult.attacks);
+
+      updateScoreDisplay(score);
+      spawnScorePopup(-wolfResult.attacks);
+      triggerShake(0.35);
     }
 
     updateBursts(scene, delta);
