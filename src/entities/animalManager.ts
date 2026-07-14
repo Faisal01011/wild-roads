@@ -71,9 +71,13 @@ export class AnimalManager {
     let attacks = 0;
 
     for (const animal of this.animals) {
-      const caught = animal.update(delta, snakeHeadPosition);
-      if (caught) attacks++;
-    }
+  animal.nearbyAnimals = this.animals;
+}
+
+for (const animal of this.animals) {
+  const caught = animal.update(delta, snakeHeadPosition);
+  if (caught) attacks++;
+}
 
     if (!this.config.isPredator) {
       for (let i = this.animals.length - 1; i >= 0; i--) {

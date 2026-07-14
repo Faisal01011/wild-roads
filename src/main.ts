@@ -138,8 +138,8 @@ function beginGame(assets: GameAssets) {
   const deerManager = new AnimalManager(scene, {
     modelPath: '/models/Deer/Deer.gltf',
     scaleCorrection: 0.42,
-    count: 6,
-    spawnRadius: 40,
+    count: 12,
+    spawnRadius: 20,
     despawnRadius: 60,
     eatDistance: 1.5,
     points: 1,
