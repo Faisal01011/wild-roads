@@ -19,6 +19,9 @@ const STAMINA_DRAIN_RATE = 35;
 const STAMINA_REGEN_RATE = 20;
 const MIN_STAMINA_TO_BOOST = 5;
 
+const BODY_WAVE_AMPLITUDE = 0.08;
+const BODY_WAVE_FREQUENCY = 0.6;
+
 function createBlobShadowTexture(): THREE.Texture {
   const size = 128;
   const canvas = document.createElement('canvas');
@@ -41,15 +44,24 @@ function createBlobShadowTexture(): THREE.Texture {
 
 const blobShadowTexture = createBlobShadowTexture();
 
+// Reused scratch vectors for the per-segment wave calculation —
+// avoids allocating new Vector3s every segment, every frame.
+const scratchDirection = new THREE.Vector3();
+const scratchPerpendicular = new THREE.Vector3();
+
 export class Snake {
   public head: THREE.Object3D;
   private heading: number = 0;
+  private turnVelocity: number = 0;
   private segments: THREE.Mesh[] = [];
   private segmentShadows: THREE.Mesh[] = [];
   private headShadow: THREE.Mesh;
   private positionHistory: THREE.Vector3[] = [];
   private stamina: number = MAX_STAMINA;
   private isBoosting: boolean = false;
+
+  private currentSpeed = FORWARD_SPEED;
+  private targetSpeed = FORWARD_SPEED;
 
   constructor() {
     const headGroup = new THREE.Group();
@@ -114,24 +126,24 @@ export class Snake {
   }
 
   shrink(scene: THREE.Scene, count: number = 1) {
-  for (let i = 0; i < count; i++) {
-    if (this.segments.length <= 1) break;
+    for (let i = 0; i < count; i++) {
+      if (this.segments.length <= 1) break;
 
-    const segment = this.segments.pop();
-    const shadow = this.segmentShadows.pop();
+      const segment = this.segments.pop();
+      const shadow = this.segmentShadows.pop();
 
-    if (segment) {
-      scene.remove(segment);
-      segment.geometry.dispose();
-      (segment.material as THREE.Material).dispose();
-    }
-    if (shadow) {
-      scene.remove(shadow);
-      shadow.geometry.dispose();
-      (shadow.material as THREE.Material).dispose();
+      if (segment) {
+        scene.remove(segment);
+        segment.geometry.dispose();
+        (segment.material as THREE.Material).dispose();
+      }
+      if (shadow) {
+        scene.remove(shadow);
+        shadow.geometry.dispose();
+        (shadow.material as THREE.Material).dispose();
+      }
     }
   }
-}
 
   get length(): number {
     return this.segments.length;
@@ -154,8 +166,23 @@ export class Snake {
 
   update(delta: number, rockColliders: RockCollider[]) {
     const turnInput = input.getTurnInput();
-    this.heading -= turnInput * TURN_SPEED * delta;
+
+    const targetTurnVelocity = -turnInput * TURN_SPEED;
+
+    this.turnVelocity = THREE.MathUtils.lerp(
+      this.turnVelocity,
+      targetTurnVelocity,
+      8 * delta
+    );
+
+    this.heading += this.turnVelocity * delta;
     this.head.rotation.y = this.heading;
+
+    this.head.rotation.z = THREE.MathUtils.lerp(
+      this.head.rotation.z,
+      -this.turnVelocity * 0.2,
+      10 * delta
+    );
 
     const wantsBoost = input.wantsBoost();
 
@@ -172,14 +199,21 @@ export class Snake {
       this.stamina = Math.min(MAX_STAMINA, this.stamina + STAMINA_REGEN_RATE * delta);
     }
 
-    const currentSpeed = this.isBoosting ? BOOST_SPEED : FORWARD_SPEED;
+    this.targetSpeed = this.isBoosting ? BOOST_SPEED : FORWARD_SPEED;
+
+    this.currentSpeed = THREE.MathUtils.lerp(
+      this.currentSpeed,
+      this.targetSpeed,
+      6 * delta
+    );
 
     const forward = new THREE.Vector3(
       Math.sin(this.heading),
       0,
       Math.cos(this.heading)
     );
-    this.head.position.addScaledVector(forward, currentSpeed * delta);
+
+    this.head.position.addScaledVector(forward, this.currentSpeed * delta);
 
     resolveRockCollisions(this.head.position, rockColliders, HEAD_COLLISION_RADIUS);
 
@@ -195,58 +229,89 @@ export class Snake {
 
     const totalSegments = this.segments.length;
 
-// Pre-compute each segment's target distance and taper factor first
-const targets: { distance: number; taperFactor: number }[] = [];
-let cumulativeDistance = 0;
-for (let i = 0; i < totalSegments; i++) {
-  const distanceFromTail = totalSegments - 1 - i;
-  const isTapered = distanceFromTail < TAPER_COUNT;
-  const taperFactor = isTapered
-    ? 0.35 + 0.65 * (distanceFromTail / TAPER_COUNT)
-    : 1;
-  const spacingForThisSegment = SEGMENT_SPACING * (isTapered ? Math.max(taperFactor, 0.5) : 1);
-  cumulativeDistance += spacingForThisSegment;
-  targets.push({ distance: cumulativeDistance, taperFactor });
-}
+    const targets: { distance: number; taperFactor: number }[] = [];
+    let cumulativeDistance = 0;
+    for (let i = 0; i < totalSegments; i++) {
+      const distanceFromTail = totalSegments - 1 - i;
+      const isTapered = distanceFromTail < TAPER_COUNT;
+      const taperFactor = isTapered
+        ? 0.35 + 0.65 * (distanceFromTail / TAPER_COUNT)
+        : 1;
+      const spacingForThisSegment = SEGMENT_SPACING * (isTapered ? Math.max(taperFactor, 0.5) : 1);
+      cumulativeDistance += spacingForThisSegment;
+      targets.push({ distance: cumulativeDistance, taperFactor });
+    }
 
-// Single pass through history, correctly measuring distance from the head
-let travelled = 0;
-let targetIndex = 0;
+    let travelled = 0;
+    let targetIndex = 0;
+    const now = performance.now();
 
-for (let i = 1; i < this.positionHistory.length && targetIndex < targets.length; i++) {
-  const a = this.positionHistory[i - 1];
-  const b = this.positionHistory[i];
-  const segmentLength = a.distanceTo(b);
+    for (let i = 1; i < this.positionHistory.length && targetIndex < targets.length; i++) {
+      const a = this.positionHistory[i - 1];
+      const b = this.positionHistory[i];
+      const segmentLength = a.distanceTo(b);
 
-  while (targetIndex < targets.length && travelled + segmentLength >= targets[targetIndex].distance) {
-    const remaining = targets[targetIndex].distance - travelled;
-    const t = segmentLength > 0 ? remaining / segmentLength : 0;
-    const point = a.clone().lerp(b, t);
-    const taperFactor = targets[targetIndex].taperFactor;
+      while (targetIndex < targets.length && travelled + segmentLength >= targets[targetIndex].distance) {
+        const remaining = targets[targetIndex].distance - travelled;
+        const t = segmentLength > 0 ? remaining / segmentLength : 0;
+        const point = a.clone().lerp(b, t);
+        const taperFactor = targets[targetIndex].taperFactor;
 
-    const segmentTerrainHeight = getTerrainHeight(point.x, point.z);
-    this.segments[targetIndex].position.set(point.x, segmentTerrainHeight + SEGMENT_GROUND_OFFSET, point.z);
-    this.segments[targetIndex].scale.setScalar(taperFactor);
+        // Direction of travel at this point, using reused scratch vectors (no allocation)
+        scratchDirection.copy(a).sub(b).normalize();
+        scratchPerpendicular.set(-scratchDirection.z, 0, scratchDirection.x);
 
-    this.segmentShadows[targetIndex].position.set(point.x, segmentTerrainHeight + 0.02, point.z);
-    this.segmentShadows[targetIndex].scale.setScalar(taperFactor);
+        const wave =
+          Math.sin(now * 0.004 - targets[targetIndex].distance * BODY_WAVE_FREQUENCY) *
+          BODY_WAVE_AMPLITUDE;
 
-    targetIndex++;
-  }
+        point.addScaledVector(scratchPerpendicular, wave);
 
-  travelled += segmentLength;
-}
+        const segmentTerrainHeight = getTerrainHeight(point.x, point.z);
 
-// Fallback for any segments beyond available history (e.g. right at spawn)
-const fallbackPoint = this.positionHistory[this.positionHistory.length - 1];
-while (targetIndex < targets.length && fallbackPoint) {
-  const taperFactor = targets[targetIndex].taperFactor;
-  const segmentTerrainHeight = getTerrainHeight(fallbackPoint.x, fallbackPoint.z);
-  this.segments[targetIndex].position.set(fallbackPoint.x, segmentTerrainHeight + SEGMENT_GROUND_OFFSET, fallbackPoint.z);
-  this.segments[targetIndex].scale.setScalar(taperFactor);
-  this.segmentShadows[targetIndex].position.set(fallbackPoint.x, segmentTerrainHeight + 0.02, fallbackPoint.z);
-  this.segmentShadows[targetIndex].scale.setScalar(taperFactor);
-  targetIndex++;
-}
+        this.segments[targetIndex].position.set(
+          point.x,
+          segmentTerrainHeight + SEGMENT_GROUND_OFFSET,
+          point.z
+        );
+
+        const lookTarget =
+          targetIndex === 0 ? this.head.position : this.segments[targetIndex - 1].position;
+
+        const dx = lookTarget.x - point.x;
+        const dz = lookTarget.z - point.z;
+        this.segments[targetIndex].rotation.y = Math.atan2(dx, dz);
+        this.segments[targetIndex].scale.setScalar(taperFactor);
+
+        this.segmentShadows[targetIndex].position.set(point.x, segmentTerrainHeight + 0.02, point.z);
+        this.segmentShadows[targetIndex].scale.setScalar(taperFactor);
+
+        targetIndex++;
+      }
+
+      travelled += segmentLength;
+    }
+
+    const fallbackPoint = this.positionHistory[this.positionHistory.length - 1];
+    while (targetIndex < targets.length && fallbackPoint) {
+      const taperFactor = targets[targetIndex].taperFactor;
+      const segmentTerrainHeight = getTerrainHeight(fallbackPoint.x, fallbackPoint.z);
+      this.segments[targetIndex].position.set(
+        fallbackPoint.x,
+        segmentTerrainHeight + SEGMENT_GROUND_OFFSET,
+        fallbackPoint.z
+      );
+
+      const lookTarget =
+        targetIndex === 0 ? this.head.position : this.segments[targetIndex - 1].position;
+
+      const dx = lookTarget.x - fallbackPoint.x;
+      const dz = lookTarget.z - fallbackPoint.z;
+      this.segments[targetIndex].rotation.y = Math.atan2(dx, dz);
+      this.segments[targetIndex].scale.setScalar(taperFactor);
+      this.segmentShadows[targetIndex].position.set(fallbackPoint.x, segmentTerrainHeight + 0.02, fallbackPoint.z);
+      this.segmentShadows[targetIndex].scale.setScalar(taperFactor);
+      targetIndex++;
+    }
   }
 }
