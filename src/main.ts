@@ -1,5 +1,6 @@
 import './style.css';
 import * as THREE from 'three';
+import { injectSpeedInsights } from '@vercel/speed-insights';
 import { createScene } from './world/scene';
 import { DayNightCycle } from './world/lighting';
 import { SkyObjects } from './world/sky';
@@ -15,6 +16,9 @@ import type { GameAssets } from './utils/assetLoader';
 import { setupTouchControls } from './utils/touchControls';
 import { triggerShake, spawnEatBurst, updateBursts } from './utils/effects';
 import { updateFpsCounter } from './utils/fpsCounter';
+
+// Initialize Vercel Speed Insights
+injectSpeedInsights();
 
 const BEST_SCORE_KEY = 'wildroads_best_score';
 
