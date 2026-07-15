@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createChunk, scatterDecorations, CHUNK_SIZE } from './chunk';
+import { createChunk, scatterDecorations, createWaterMesh, CHUNK_SIZE } from './chunk';
 import type { ChunkAssets, RockCollider } from './chunk';
 
 const LOAD_RADIUS = 1;
@@ -11,6 +11,7 @@ export class ChunkManager {
   private loadedDecorations: Map<string, THREE.Group> = new Map();
   private loadedColliders: Map<string, RockCollider[]> = new Map();
   private loadedGrass: Map<string, THREE.InstancedMesh[]> = new Map();
+  private loadedWater: Map<string, THREE.Mesh> = new Map();
 
   constructor(scene: THREE.Scene, assets: ChunkAssets) {
     this.scene = scene;
@@ -44,6 +45,10 @@ export class ChunkManager {
 
           grassMeshes.forEach((mesh) => this.scene.add(mesh));
           this.loadedGrass.set(k, grassMeshes);
+
+          const water = createWaterMesh(x, z);
+          this.scene.add(water);
+          this.loadedWater.set(k, water);
         }
       }
     }
@@ -69,6 +74,16 @@ export class ChunkManager {
           // chunks via the module-level variant cache in chunk.ts
           grassMeshes.forEach((mesh) => this.scene.remove(mesh));
           this.loadedGrass.delete(k);
+        }
+
+        const water = this.loadedWater.get(k);
+        if (water) {
+          this.scene.remove(water);
+          water.geometry.dispose();
+          const material = water.material as THREE.MeshStandardMaterial;
+          material.alphaMap?.dispose();
+          material.dispose();
+          this.loadedWater.delete(k);
         }
       }
     }
