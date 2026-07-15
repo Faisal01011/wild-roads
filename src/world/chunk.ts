@@ -7,39 +7,6 @@ const HEIGHT_SCALE = 1.5;
 const NOISE_FREQUENCY = 0.02;
 
 const noise2D = createNoise2D(() => 0.42);
-const riverNoise2D = createNoise2D(() => 0.17);
-const warpNoise2D = createNoise2D(() => 0.63);
-
-const RIVER_FREQUENCY = 0.005;
-const RIVER_WIDTH = 0.18;
-const WARP_STRENGTH = 10;
-const WATER_LEVEL = -0.55;
-const RIVERBED_HEIGHT = WATER_LEVEL - 0.3; // fixed depth, always guaranteed below the water surface
-const WATER_TEXTURE_RES = 128;
-const FOAM_THRESHOLD = 0.82;
-
-// Returns 0 (dry land) to 1 (river center), smoothly blended at the banks.
-// Domain-warped so the zero-crossing band winds organically instead of forming closed lens shapes.
-export function getRiverMask(worldX: number, worldZ: number): number {
-  const warpX = warpNoise2D(worldX * 0.01, worldZ * 0.01) * WARP_STRENGTH;
-  const warpZ = warpNoise2D(worldX * 0.01 + 100, worldZ * 0.01 + 100) * WARP_STRENGTH;
-
-  const value = riverNoise2D(
-    (worldX + warpX) * RIVER_FREQUENCY,
-    (worldZ + warpZ) * RIVER_FREQUENCY
-  );
-  return 1 - THREE.MathUtils.smoothstep(Math.abs(value), 0, RIVER_WIDTH);
-}
-
-// Single source of truth for surface height — used by both the terrain mesh AND
-// getTerrainHeight, so the snake's collision height and the visual carve always agree.
-// Blends TOWARD a fixed riverbed height (rather than subtracting a fixed depth) so the
-// channel is guaranteed to stay below WATER_LEVEL regardless of the local hill height.
-function computeSurfaceHeight(worldX: number, worldZ: number): number {
-  const baseHeight = noise2D(worldX * NOISE_FREQUENCY, worldZ * NOISE_FREQUENCY) * HEIGHT_SCALE;
-  const riverMask = getRiverMask(worldX, worldZ);
-  return THREE.MathUtils.lerp(baseHeight, RIVERBED_HEIGHT, riverMask);
-}
 
 function createGrassGroundTexture(): THREE.Texture {
   const size = 256;
@@ -49,19 +16,19 @@ function createGrassGroundTexture(): THREE.Texture {
   const ctx = canvas.getContext('2d')!;
 
   ctx.fillStyle = '#3a5c34';
-  ctx.fillRect(0, 0, size, size);
+ctx.fillRect(0, 0, size, size);
 
-  const bladeCount = 2500;
-  for (let i = 0; i < bladeCount; i++) {
-    const x = Math.random() * size;
-    const y = Math.random() * size;
-    const shadeRoll = Math.random();
-    const color =
-      shadeRoll < 0.25 ? '#2e4a29' :
-      shadeRoll < 0.5 ? '#4a6b3e' :
-      shadeRoll < 0.7 ? '#5a7548' :
-      shadeRoll < 0.85 ? '#3d5a35' :
-      '#4d3f2a';
+const bladeCount = 2500;
+for (let i = 0; i < bladeCount; i++) {
+  const x = Math.random() * size;
+  const y = Math.random() * size;
+  const shadeRoll = Math.random();
+  const color =
+    shadeRoll < 0.25 ? '#2e4a29' :   // deep shadowed moss
+    shadeRoll < 0.5 ? '#4a6b3e' :    // mid olive-green
+    shadeRoll < 0.7 ? '#5a7548' :    // lighter grass-brown blend
+    shadeRoll < 0.85 ? '#3d5a35' :   // another mid tone for variety
+    '#4d3f2a';                        // occasional dirt/brown fleck
 
     ctx.save();
     ctx.translate(x, y);
@@ -95,7 +62,7 @@ export function createChunk(chunkX: number, chunkZ: number): THREE.Mesh {
     const localZ = position.getZ(i);
     const worldX = localX + worldOffsetX;
     const worldZ = localZ + worldOffsetZ;
-    const height = computeSurfaceHeight(worldX, worldZ);
+    const height = noise2D(worldX * NOISE_FREQUENCY, worldZ * NOISE_FREQUENCY) * HEIGHT_SCALE;
     position.setY(i, height);
   }
 
@@ -115,62 +82,7 @@ export function createChunk(chunkX: number, chunkZ: number): THREE.Mesh {
 }
 
 export function getTerrainHeight(worldX: number, worldZ: number): number {
-  return computeSurfaceHeight(worldX, worldZ);
-}
-
-function createWaterAlphaTexture(chunkX: number, chunkZ: number): THREE.Texture {
-  const canvas = document.createElement('canvas');
-  canvas.width = WATER_TEXTURE_RES;
-  canvas.height = WATER_TEXTURE_RES;
-  const ctx = canvas.getContext('2d')!;
-  const imageData = ctx.createImageData(WATER_TEXTURE_RES, WATER_TEXTURE_RES);
-
-  const worldOffsetX = chunkX * CHUNK_SIZE;
-  const worldOffsetZ = chunkZ * CHUNK_SIZE;
-
-  const deepColor = { r: 45, g: 110, b: 180 };
-  const foamColor = { r: 190, g: 220, b: 230 };
-
-  for (let py = 0; py < WATER_TEXTURE_RES; py++) {
-    for (let px = 0; px < WATER_TEXTURE_RES; px++) {
-      const localX = (px / WATER_TEXTURE_RES - 0.5) * CHUNK_SIZE;
-      const localZ = (py / WATER_TEXTURE_RES - 0.5) * CHUNK_SIZE;
-      const mask = getRiverMask(worldOffsetX + localX, worldOffsetZ + localZ);
-
-      const edgeFactor = mask > 0.02 ? 1 - Math.min(mask / FOAM_THRESHOLD, 1) : 0;
-
-      const r = THREE.MathUtils.lerp(deepColor.r, foamColor.r, edgeFactor);
-      const g = THREE.MathUtils.lerp(deepColor.g, foamColor.g, edgeFactor);
-      const b = THREE.MathUtils.lerp(deepColor.b, foamColor.b, edgeFactor);
-
-      const i = (py * WATER_TEXTURE_RES + px) * 4;
-      imageData.data[i] = r;
-      imageData.data[i + 1] = g;
-      imageData.data[i + 2] = b;
-      imageData.data[i + 3] = Math.floor(mask * 255);
-    }
-  }
-
-  ctx.putImageData(imageData, 0, 0);
-  return new THREE.CanvasTexture(canvas);
-}
-
-export function createWaterMesh(chunkX: number, chunkZ: number): THREE.Mesh {
-  const geometry = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE);
-  geometry.rotateX(-Math.PI / 2);
-
-  const alphaMap = createWaterAlphaTexture(chunkX, chunkZ);
-  const material = new THREE.MeshStandardMaterial({
-    color: 0x3c82c8,
-    transparent: true,
-    alphaMap,
-    roughness: 0.15,
-    metalness: 0.1,
-  });
-
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.position.set(chunkX * CHUNK_SIZE, WATER_LEVEL, chunkZ * CHUNK_SIZE);
-  return mesh;
+  return noise2D(worldX * NOISE_FREQUENCY, worldZ * NOISE_FREQUENCY) * HEIGHT_SCALE;
 }
 
 const raycaster = new THREE.Raycaster();
@@ -212,7 +124,6 @@ const BUSHES_PER_CHUNK = 3;
 const ROCKS_PER_CHUNK = 2;
 const GRASS_PER_CHUNK = 500;
 const SPAWN_CLEAR_RADIUS = 8;
-const RIVER_SPAWN_BLOCK_THRESHOLD = 0.15;
 
 function seededRandom(x: number, z: number, salt: number): number {
   const value = Math.sin(x * 127.1 + z * 311.7 + salt * 74.7) * 43758.5453;
@@ -253,6 +164,8 @@ function extractMesh(group: THREE.Group): THREE.Mesh | null {
 }
 
 // ---------- Grass trample shader ----------
+// Shared uniform object — one trample position drives every grass material,
+// regardless of how many chunks/variants exist, since it's mutated in place.
 const trampleUniforms = {
   uTramplePos: { value: new THREE.Vector3(99999, 0, 99999) },
   uTrampleRadius: { value: 2.2 },
@@ -338,6 +251,7 @@ function createGrassForChunk(
     .filter((v): v is GrassVariant => v !== null);
   if (variants.length === 0) return [];
 
+  // Bucket instance transforms per variant first, then build one InstancedMesh per variant
   const buckets: THREE.Matrix4[][] = variants.map(() => []);
 
   const gridSize = Math.ceil(Math.sqrt(GRASS_PER_CHUNK));
@@ -363,7 +277,6 @@ function createGrassForChunk(
 
       const distanceFromOrigin = Math.sqrt(worldX * worldX + worldZ * worldZ);
       if (distanceFromOrigin < SPAWN_CLEAR_RADIUS) continue;
-      if (getRiverMask(worldX, worldZ) > RIVER_SPAWN_BLOCK_THRESHOLD) continue;
 
       const variantIndex = Math.floor(rv * variants.length);
       const scale = 0.8 + rs * 0.5;
@@ -439,7 +352,6 @@ export function scatterDecorations(
 
       const distanceFromOrigin = Math.sqrt(worldX * worldX + worldZ * worldZ);
       if (distanceFromOrigin < SPAWN_CLEAR_RADIUS) continue;
-      if (getRiverMask(worldX, worldZ) > RIVER_SPAWN_BLOCK_THRESHOLD) continue;
 
       const instance = template.clone(true);
       const variation = scaleRange[0] + rs * (scaleRange[1] - scaleRange[0]);
@@ -457,11 +369,11 @@ export function scatterDecorations(
       }
 
       instance.traverse((child) => {
-        if (child instanceof THREE.Mesh) {
-          child.castShadow = true;
-          child.receiveShadow = true;
-        }
-      });
+  if (child instanceof THREE.Mesh) {
+    child.castShadow = true; // shadows from dozens of trees/bushes/rocks are expensive; keep receiveShadow only
+    child.receiveShadow = true;
+  }
+});
       group.add(instance);
 
       if (isRock) {
