@@ -15,20 +15,57 @@ function createGrassGroundTexture(): THREE.Texture {
   canvas.height = size;
   const ctx = canvas.getContext('2d')!;
 
-  ctx.fillStyle = '#3a5c34';
-ctx.fillRect(0, 0, size, size);
+  ctx.fillStyle = '#0f4b04';
+  ctx.fillRect(0, 0, size, size);
 
-const bladeCount = 2500;
-for (let i = 0; i < bladeCount; i++) {
-  const x = Math.random() * size;
-  const y = Math.random() * size;
-  const shadeRoll = Math.random();
-  const color =
-    shadeRoll < 0.25 ? '#2e4a29' :   // deep shadowed moss
-    shadeRoll < 0.5 ? '#4a6b3e' :    // mid olive-green
-    shadeRoll < 0.7 ? '#5a7548' :    // lighter grass-brown blend
-    shadeRoll < 0.85 ? '#3d5a35' :   // another mid tone for variety
-    '#4d3f2a';                        // occasional dirt/brown fleck
+  // Base color patches — soft blotches of tonal variation so the ground
+  // doesn't read as a single flat color under the blade detail.
+  const patchCount = 18;
+  for (let i = 0; i < patchCount; i++) {
+    const x = Math.random() * size;
+    const y = Math.random() * size;
+    const radius = 20 + Math.random() * 40;
+    const shade = Math.random();
+    const color =
+      shade < 0.4 ? 'rgba(46, 74, 41, 0.35)' :
+      shade < 0.7 ? 'rgba(74, 107, 62, 0.3)' :
+      'rgba(61, 90, 53, 0.3)';
+
+    const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
+    gradient.addColorStop(0, color);
+    gradient.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Sparse bare-dirt flecks for ground texture realism
+  const dirtPatchCount = 6;
+  for (let i = 0; i < dirtPatchCount; i++) {
+    const x = Math.random() * size;
+    const y = Math.random() * size;
+    const radius = 4 + Math.random() * 8;
+    const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
+    gradient.addColorStop(0, 'rgba(77, 63, 42, 0.4)');
+    gradient.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const bladeCount = 4500;
+  for (let i = 0; i < bladeCount; i++) {
+    const x = Math.random() * size;
+    const y = Math.random() * size;
+    const shadeRoll = Math.random();
+    const color =
+      shadeRoll < 0.25 ? '#2e4a29' :
+      shadeRoll < 0.5 ? '#4a6b3e' :
+      shadeRoll < 0.7 ? '#5a7548' :
+      shadeRoll < 0.85 ? '#3d5a35' :
+      '#4d3f2a';
 
     ctx.save();
     ctx.translate(x, y);
@@ -164,8 +201,6 @@ function extractMesh(group: THREE.Group): THREE.Mesh | null {
 }
 
 // ---------- Grass trample shader ----------
-// Shared uniform object — one trample position drives every grass material,
-// regardless of how many chunks/variants exist, since it's mutated in place.
 const trampleUniforms = {
   uTramplePos: { value: new THREE.Vector3(99999, 0, 99999) },
   uTrampleRadius: { value: 2.2 },
@@ -196,7 +231,8 @@ function getGrassVariant(template: THREE.Group): GrassVariant | null {
   const tipHeight = mesh.geometry.boundingBox ? mesh.geometry.boundingBox.max.y : 1;
 
   const material = (mesh.material as THREE.MeshStandardMaterial).clone();
-  material.color = new THREE.Color(0x4caf50);
+  // Matched to the ground texture's mid-tone blade color instead of a flat bright green
+  material.color = new THREE.Color(0x3f6b3e);
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uTramplePos = trampleUniforms.uTramplePos;
     shader.uniforms.uTrampleRadius = trampleUniforms.uTrampleRadius;
@@ -251,7 +287,6 @@ function createGrassForChunk(
     .filter((v): v is GrassVariant => v !== null);
   if (variants.length === 0) return [];
 
-  // Bucket instance transforms per variant first, then build one InstancedMesh per variant
   const buckets: THREE.Matrix4[][] = variants.map(() => []);
 
   const gridSize = Math.ceil(Math.sqrt(GRASS_PER_CHUNK));
@@ -369,11 +404,11 @@ export function scatterDecorations(
       }
 
       instance.traverse((child) => {
-  if (child instanceof THREE.Mesh) {
-    child.castShadow = true; // shadows from dozens of trees/bushes/rocks are expensive; keep receiveShadow only
-    child.receiveShadow = true;
-  }
-});
+        if (child instanceof THREE.Mesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
       group.add(instance);
 
       if (isRock) {
