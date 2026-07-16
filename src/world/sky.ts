@@ -1,5 +1,17 @@
 import * as THREE from 'three';
 
+function configureSpriteTexture(texture: THREE.Texture): THREE.Texture {
+  // Sprite billboards don't need mipmaps, and generating them on transparent
+  // canvas textures causes RGB from fully-transparent (black) regions to
+  // bleed into visible pixels at lower mip levels — this shows up as
+  // colored fringing/speckling, especially pronounced on mobile GPUs.
+  texture.generateMipmaps = false;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.needsUpdate = true;
+  return texture;
+}
+
 function createGlowTexture(color: string): THREE.Texture {
   const size = 128;
   const canvas = document.createElement('canvas');
@@ -15,7 +27,7 @@ function createGlowTexture(color: string): THREE.Texture {
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, size, size);
 
-  return new THREE.CanvasTexture(canvas);
+  return configureSpriteTexture(new THREE.CanvasTexture(canvas));
 }
 
 function createCloudTexture(): THREE.Texture {
@@ -43,7 +55,7 @@ function createCloudTexture(): THREE.Texture {
     ctx.fill();
   }
 
-  return new THREE.CanvasTexture(canvas);
+  return configureSpriteTexture(new THREE.CanvasTexture(canvas));
 }
 
 const sunTexture = createGlowTexture('rgba(255,244,214,1)');
@@ -78,29 +90,29 @@ export class SkyObjects {
     scene.add(this.moon);
 
     const CLOUD_COUNT = 14;
-for (let i = 0; i < CLOUD_COUNT; i++) {
-  const material = new THREE.SpriteMaterial({
-    map: cloudTexture,
-    transparent: true,
-    depthWrite: false,
-    opacity: 0.75,
-    fog: false,
-  });
-  const cloud = new THREE.Sprite(material);
-  const scale = 25 + Math.random() * 30;
-  cloud.scale.set(scale, scale * 0.5, 1);
+    for (let i = 0; i < CLOUD_COUNT; i++) {
+      const material = new THREE.SpriteMaterial({
+        map: cloudTexture,
+        transparent: true,
+        depthWrite: false,
+        opacity: 0.75,
+        fog: false,
+      });
+      const cloud = new THREE.Sprite(material);
+      const scale = 25 + Math.random() * 30;
+      cloud.scale.set(scale, scale * 0.5, 1);
 
-  const angle = Math.random() * Math.PI * 2;
-  const distance = 90 + Math.random() * 80;
-  cloud.position.set(
-    Math.cos(angle) * distance,
-    15 + Math.random() * 10,
-    Math.sin(angle) * distance
-  );
-  scene.add(cloud);
-  this.clouds.push(cloud);
-  this.cloudSpeeds.push(0.5 + Math.random() * 1);
-}
+      const angle = Math.random() * Math.PI * 2;
+      const distance = 90 + Math.random() * 80;
+      cloud.position.set(
+        Math.cos(angle) * distance,
+        15 + Math.random() * 10,
+        Math.sin(angle) * distance
+      );
+      scene.add(cloud);
+      this.clouds.push(cloud);
+      this.cloudSpeeds.push(0.5 + Math.random() * 1);
+    }
   }
 
   update(delta: number, sunAngle: number, sunHeight: number, playerPosition: THREE.Vector3) {
@@ -127,22 +139,22 @@ for (let i = 0; i < CLOUD_COUNT; i++) {
 
     // Drift clouds slowly, recycle when far from the player
     for (let i = 0; i < this.clouds.length; i++) {
-  const cloud = this.clouds[i];
-  cloud.position.x += this.cloudSpeeds[i] * delta;
+      const cloud = this.clouds[i];
+      cloud.position.x += this.cloudSpeeds[i] * delta;
 
-  const dx = cloud.position.x - playerPosition.x;
-  const dz = cloud.position.z - playerPosition.z;
-  const dist = Math.sqrt(dx * dx + dz * dz);
+      const dx = cloud.position.x - playerPosition.x;
+      const dz = cloud.position.z - playerPosition.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
 
-  if (dist > 200 || dist < 60) {
-    const angle = Math.random() * Math.PI * 2;
-    const spawnDistance = 90 + Math.random() * 80;
-    cloud.position.set(
-      playerPosition.x + Math.cos(angle) * spawnDistance,
-      15 + Math.random() * 10,
-      playerPosition.z + Math.sin(angle) * spawnDistance
-    );
-  }
-}
+      if (dist > 200 || dist < 60) {
+        const angle = Math.random() * Math.PI * 2;
+        const spawnDistance = 90 + Math.random() * 80;
+        cloud.position.set(
+          playerPosition.x + Math.cos(angle) * spawnDistance,
+          15 + Math.random() * 10,
+          playerPosition.z + Math.sin(angle) * spawnDistance
+        );
+      }
+    }
   }
 }
