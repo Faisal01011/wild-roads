@@ -1,10 +1,6 @@
 import * as THREE from 'three';
 
 function configureSpriteTexture(texture: THREE.Texture): THREE.Texture {
-  // Sprite billboards don't need mipmaps, and generating them on transparent
-  // canvas textures causes RGB from fully-transparent (black) regions to
-  // bleed into visible pixels at lower mip levels — this shows up as
-  // colored fringing/speckling, especially pronounced on mobile GPUs.
   texture.generateMipmaps = false;
   texture.minFilter = THREE.LinearFilter;
   texture.magFilter = THREE.LinearFilter;
@@ -12,21 +8,38 @@ function configureSpriteTexture(texture: THREE.Texture): THREE.Texture {
   return texture;
 }
 
-function createGlowTexture(color: string): THREE.Texture {
+// Manually computes a radial falloff into ImageData instead of using
+// ctx.createRadialGradient — some mobile browsers (notably Chrome on
+// Android) apply automatic dithering to canvas gradients to prevent
+// banding, which introduces per-pixel color noise. That noise is invisible
+// at native texture size but becomes visible speckling once the texture is
+// stretched across large sprites. Writing pixels directly avoids the
+// dithering pass entirely.
+function createGlowTexture(r: number, g: number, b: number): THREE.Texture {
   const size = 128;
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext('2d')!;
+  const imageData = ctx.createImageData(size, size);
+  const center = size / 2;
 
-  const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-  gradient.addColorStop(0, color);
-  gradient.addColorStop(0.4, color);
-  gradient.addColorStop(1, 'rgba(255,255,255,0)');
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = x - center;
+      const dy = y - center;
+      const dist = Math.sqrt(dx * dx + dy * dy) / center; // 0 at center, 1 at edge
+      const alpha = dist < 0.4 ? 1 : Math.max(0, 1 - (dist - 0.4) / 0.6);
 
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, size, size);
+      const i = (y * size + x) * 4;
+      imageData.data[i] = r;
+      imageData.data[i + 1] = g;
+      imageData.data[i + 2] = b;
+      imageData.data[i + 3] = Math.round(alpha * 255);
+    }
+  }
 
+  ctx.putImageData(imageData, 0, 0);
   return configureSpriteTexture(new THREE.CanvasTexture(canvas));
 }
 
@@ -36,8 +49,8 @@ function createCloudTexture(): THREE.Texture {
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext('2d')!;
+  const imageData = ctx.createImageData(size, size);
 
-  // Several overlapping soft blobs to form an irregular cloud puff shape
   const blobs = [
     { x: 40, y: 70, r: 30 },
     { x: 70, y: 60, r: 34 },
@@ -45,21 +58,33 @@ function createCloudTexture(): THREE.Texture {
     { x: 60, y: 50, r: 28 },
   ];
 
-  for (const blob of blobs) {
-    const gradient = ctx.createRadialGradient(blob.x, blob.y, 0, blob.x, blob.y, blob.r);
-    gradient.addColorStop(0, 'rgba(255,255,255,0.9)');
-    gradient.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = gradient;
-    ctx.beginPath();
-    ctx.arc(blob.x, blob.y, blob.r, 0, Math.PI * 2);
-    ctx.fill();
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      let maxAlpha = 0;
+
+      for (const blob of blobs) {
+        const dx = x - blob.x;
+        const dy = y - blob.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const t = dist / blob.r;
+        const alpha = t < 1 ? (1 - t) * 0.9 : 0;
+        maxAlpha = Math.max(maxAlpha, alpha);
+      }
+
+      const i = (y * size + x) * 4;
+      imageData.data[i] = 255;
+      imageData.data[i + 1] = 255;
+      imageData.data[i + 2] = 255;
+      imageData.data[i + 3] = Math.round(Math.min(1, maxAlpha) * 255);
+    }
   }
 
+  ctx.putImageData(imageData, 0, 0);
   return configureSpriteTexture(new THREE.CanvasTexture(canvas));
 }
 
-const sunTexture = createGlowTexture('rgba(255,244,214,1)');
-const moonTexture = createGlowTexture('rgba(214,224,255,1)');
+const sunTexture = createGlowTexture(255, 244, 214);
+const moonTexture = createGlowTexture(214, 224, 255);
 const cloudTexture = createCloudTexture();
 
 export class SkyObjects {
@@ -118,7 +143,6 @@ export class SkyObjects {
   update(delta: number, sunAngle: number, sunHeight: number, playerPosition: THREE.Vector3) {
     const distance = 250;
 
-    // Sun and moon track the same angle as the directional light, opposite each other
     this.sun.position.set(
       playerPosition.x + Math.cos(sunAngle) * distance,
       sunHeight * distance,
@@ -133,11 +157,9 @@ export class SkyObjects {
       playerPosition.z + 30
     );
 
-    // Fade whichever body is below the horizon
     (this.sun.material as THREE.SpriteMaterial).opacity = THREE.MathUtils.clamp(sunHeight * 3, 0, 1);
     (this.moon.material as THREE.SpriteMaterial).opacity = THREE.MathUtils.clamp(moonHeight * 3, 0, 1);
 
-    // Drift clouds slowly, recycle when far from the player
     for (let i = 0; i < this.clouds.length; i++) {
       const cloud = this.clouds[i];
       cloud.position.x += this.cloudSpeeds[i] * delta;
