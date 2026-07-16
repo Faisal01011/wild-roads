@@ -164,7 +164,8 @@ function beginGame(assets: GameAssets) {
     fleeTriggerRadius: 9,
     groundOffset: 0.25,
     wanderAnimationPattern: /^walk$/i,
-    fleeAnimationPattern: /^gallop$/i, // adjust once real clip names are confirmed in console
+    fleeAnimationPattern: /^gallop$/i,      // chase animation
+    attackAnimationPattern: /^attack$/i,    // bite animation, played on catch
     isPredator: true,
     catchDistance: 1.3,
     attackCooldownSeconds: 2.5,

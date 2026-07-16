@@ -8,6 +8,7 @@ export interface AnimalConfig {
   groundOffset: number;
   wanderAnimationPattern?: RegExp;
   fleeAnimationPattern?: RegExp;
+  attackAnimationPattern?: RegExp;
   isPredator?: boolean;
   catchDistance?: number;
   attackCooldownSeconds?: number;
@@ -34,6 +35,7 @@ export class AnimatedAnimal {
   private walkAction: THREE.AnimationAction | null = null;
   private eatAction: THREE.AnimationAction | null = null;
   private runAction: THREE.AnimationAction | null = null;
+  private attackAction: THREE.AnimationAction | null = null;
 
   private config: AnimalConfig;
 
@@ -70,13 +72,16 @@ export class AnimatedAnimal {
         animations.find(a => /^idle/i.test(a.name));
 
       const walkClip =
-        animations.find(a => /^walk/i.test(a.name));
+        animations.find(a => (config.wanderAnimationPattern ?? /^walk/i).test(a.name));
 
       const eatClip =
         animations.find(a => /^eating/i.test(a.name));
 
       const runClip =
-        animations.find(a => /^gallop/i.test(a.name));
+        animations.find(a => (config.fleeAnimationPattern ?? /^gallop/i).test(a.name));
+
+      const attackClip =
+        animations.find(a => (config.attackAnimationPattern ?? /^attack/i).test(a.name));
 
       if (idleClip) {
         this.idleAction = this.mixer.clipAction(idleClip);
@@ -96,6 +101,12 @@ export class AnimatedAnimal {
       if (runClip) {
         this.runAction = this.mixer.clipAction(runClip);
         this.runAction.setLoop(THREE.LoopRepeat, Infinity);
+      }
+
+      if (attackClip) {
+        this.attackAction = this.mixer.clipAction(attackClip);
+        this.attackAction.setLoop(THREE.LoopOnce, 1);
+        this.attackAction.clampWhenFinished = true;
       }
     }
 
@@ -158,7 +169,8 @@ export class AnimatedAnimal {
 
     return direction;
   }
-    update(delta: number, snakeHeadPosition: THREE.Vector3): boolean {
+
+  update(delta: number, snakeHeadPosition: THREE.Vector3): boolean {
     const distanceToSnake = this.mesh.position.distanceTo(snakeHeadPosition);
     const previousState = this.state;
 
@@ -284,50 +296,50 @@ export class AnimatedAnimal {
       }
       case 'circle': {
 
-    this.circleTime += delta;
+        this.circleTime += delta;
 
-    const toSnake = snakeHeadPosition
-        .clone()
-        .sub(this.mesh.position);
+        const toSnake = snakeHeadPosition
+            .clone()
+            .sub(this.mesh.position);
 
-    const distance = toSnake.length();
+        const distance = toSnake.length();
 
-    toSnake.normalize();
+        toSnake.normalize();
 
-    const tangent = new THREE.Vector3(
-        -toSnake.z,
-        0,
-        toSnake.x
-    ).multiplyScalar(this.circleDirection);
+        const tangent = new THREE.Vector3(
+            -toSnake.z,
+            0,
+            toSnake.x
+        ).multiplyScalar(this.circleDirection);
 
-    const move = tangent
-        .multiplyScalar(0.8)
-        .add(
-            toSnake.multiplyScalar(
-                distance - this.circleRadius
-            )
+        const move = tangent
+            .multiplyScalar(0.8)
+            .add(
+                toSnake.multiplyScalar(
+                    distance - this.circleRadius
+                )
+            );
+
+        move.normalize();
+
+        this.mesh.position.addScaledVector(
+            move,
+            this.config.wanderSpeed * 1.8 * delta
         );
 
-    move.normalize();
+        this.faceDirection(move, delta);
 
-    this.mesh.position.addScaledVector(
-        move,
-        this.config.wanderSpeed * 1.8 * delta
-    );
+        if (
+            distance < this.config.catchDistance! + 0.3 ||
+            this.circleTime > 3
+        ) {
+            this.circleTime = 0;
+            this.state = 'panic';
+            this.playStateAnimation(this.state);
+        }
 
-    this.faceDirection(move, delta);
-
-    if (
-        distance < this.config.catchDistance! + 0.3 ||
-        this.circleTime > 3
-    ) {
-        this.circleTime = 0;
-        this.state = 'panic';
-        this.playStateAnimation(this.state);
-    }
-
-    break;
-}
+        break;
+      }
 
       case 'panic': {
         const moveDirection = this.config.isPredator
@@ -383,12 +395,34 @@ export class AnimatedAnimal {
     ) {
       this.attackCooldown =
         this.config.attackCooldownSeconds ?? 2.5;
+      this.playAttackAnimation();
       return true;
     }
 
     return false;
   }
-    private playStateAnimation(state: AnimalState) {
+
+  private playAttackAnimation() {
+    if (!this.attackAction) return;
+
+    this.attackAction.reset().setEffectiveWeight(1).fadeIn(0.1).play();
+
+    // Once the bite finishes, fade back to the chase (run) animation
+    // if we're still in panic state, rather than freezing on the last attack frame.
+    const onFinished = (event: { action: THREE.AnimationAction }) => {
+      if (event.action !== this.attackAction) return;
+      this.mixer?.removeEventListener('finished', onFinished);
+
+      if (this.state === 'panic' && this.runAction) {
+        this.attackAction!.fadeOut(0.15);
+        this.runAction.reset().setEffectiveWeight(1).fadeIn(0.15).play();
+      }
+    };
+
+    this.mixer?.addEventListener('finished', onFinished);
+  }
+
+  private playStateAnimation(state: AnimalState) {
     if (!this.mixer) return;
 
     let next: THREE.AnimationAction | null = null;
@@ -419,6 +453,7 @@ export class AnimatedAnimal {
       this.walkAction,
       this.eatAction,
       this.runAction,
+      this.attackAction,
     ].filter(Boolean) as THREE.AnimationAction[];
 
     for (const action of actions) {
