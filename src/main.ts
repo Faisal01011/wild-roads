@@ -105,6 +105,46 @@ function setupMainMenu(onPlay: () => void, onResume: () => void) {
   });
 }
 
+// ---------- Simple buff indicator UI (built dynamically, no HTML/CSS file edits needed) ----------
+let buffIndicatorEl: HTMLDivElement | null = null;
+
+function ensureBuffIndicator(): HTMLDivElement {
+  if (buffIndicatorEl) return buffIndicatorEl;
+
+  const el = document.createElement('div');
+  el.id = 'buff-indicator';
+  el.style.position = 'fixed';
+  el.style.bottom = '90px';
+  el.style.left = '20px';
+  el.style.display = 'flex';
+  el.style.flexDirection = 'column';
+  el.style.gap = '6px';
+  el.style.zIndex = '20';
+  el.style.pointerEvents = 'none';
+  document.body.appendChild(el);
+  buffIndicatorEl = el;
+  return el;
+}
+
+function renderBuffIndicator(speedSecondsLeft: number, multiplierSecondsLeft: number) {
+  const el = ensureBuffIndicator();
+  const parts: string[] = [];
+
+  if (speedSecondsLeft > 0) {
+    parts.push(
+      `<div style="background:rgba(255,204,51,0.85);color:#1a1a1a;padding:4px 10px;border-radius:6px;font-size:13px;font-weight:600;font-family:sans-serif;">⚡ Speed x1.6 — ${speedSecondsLeft.toFixed(1)}s</div>`
+    );
+  }
+
+  if (multiplierSecondsLeft > 0) {
+    parts.push(
+      `<div style="background:rgba(255,68,170,0.85);color:#fff;padding:4px 10px;border-radius:6px;font-size:13px;font-weight:600;font-family:sans-serif;">✦ Score x2 — ${multiplierSecondsLeft.toFixed(1)}s</div>`
+    );
+  }
+
+  el.innerHTML = parts.join('');
+}
+
 async function start() {
   const assets = await preloadAssets();
 
@@ -164,8 +204,8 @@ function beginGame(assets: GameAssets) {
     fleeTriggerRadius: 9,
     groundOffset: 0.25,
     wanderAnimationPattern: /^walk$/i,
-    fleeAnimationPattern: /^gallop$/i,      // chase animation
-    attackAnimationPattern: /^attack$/i,    // bite animation, played on catch
+    fleeAnimationPattern: /^gallop$/i,
+    attackAnimationPattern: /^attack$/i,
     isPredator: true,
     catchDistance: 1.3,
     attackCooldownSeconds: 2.5,
@@ -174,6 +214,9 @@ function beginGame(assets: GameAssets) {
   let animalsEaten = 0;
   let distanceTraveled = 0;
   let bestScore = Number(localStorage.getItem(BEST_SCORE_KEY) ?? 0);
+
+  let scoreMultiplier = 1;
+  let scoreMultiplierTimer = 0;
 
   updateScoreDisplay(score);
   updateStatsDisplay(distanceTraveled, animalsEaten, bestScore);
@@ -208,6 +251,30 @@ function beginGame(assets: GameAssets) {
     }
 
     updateGrassTrample(snake.head.position);
+    chunkManager.updateCollectibleAnimations(elapsedTime);
+
+    const collected = chunkManager.checkCollectibleCollisions(snake.head.position);
+    for (const item of collected) {
+      if (item.type === 'speed') {
+        snake.applySpeedBoost(5, 1.6);
+      } else if (item.type === 'stamina') {
+        snake.refillStamina(50);
+      } else if (item.type === 'score') {
+        scoreMultiplier = 2;
+        scoreMultiplierTimer = 10;
+      }
+      triggerShake(0.1);
+      audioManager.playEat();
+    }
+
+    if (scoreMultiplierTimer > 0) {
+      scoreMultiplierTimer = Math.max(0, scoreMultiplierTimer - delta);
+      if (scoreMultiplierTimer <= 0) {
+        scoreMultiplier = 1;
+      }
+    }
+
+    renderBuffIndicator(snake.speedBoostSecondsRemaining, scoreMultiplierTimer);
 
     distanceTraveled += previousHeadPosition.distanceTo(snake.head.position);
     previousHeadPosition.copy(snake.head.position);
@@ -220,11 +287,11 @@ function beginGame(assets: GameAssets) {
         snake.grow(scene);
       }
 
-      score += deerResult.eatenPoints;
+      score += deerResult.eatenPoints * scoreMultiplier;
       animalsEaten += 1;
 
       updateScoreDisplay(score);
-      spawnScorePopup(deerResult.eatenPoints);
+      spawnScorePopup(deerResult.eatenPoints * scoreMultiplier);
       audioManager.playEat();
       triggerShake(0.15);
       spawnEatBurst(scene, snake.head.position);

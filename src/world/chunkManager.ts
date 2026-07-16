@@ -1,6 +1,12 @@
 import * as THREE from 'three';
-import { createChunk, scatterDecorations, CHUNK_SIZE } from './chunk';
-import type { ChunkAssets, RockCollider } from './chunk';
+import {
+  createChunk,
+  scatterDecorations,
+  scatterCollectibles,
+  animateCollectibles,
+  CHUNK_SIZE,
+} from './chunk';
+import type { ChunkAssets, RockCollider, CollectibleData } from './chunk';
 
 const LOAD_RADIUS = 1;
 
@@ -11,6 +17,8 @@ export class ChunkManager {
   private loadedDecorations: Map<string, THREE.Group> = new Map();
   private loadedColliders: Map<string, RockCollider[]> = new Map();
   private loadedGrass: Map<string, THREE.InstancedMesh[]> = new Map();
+  private loadedCollectibleGroups: Map<string, THREE.Group> = new Map();
+  private activeCollectibles: Map<string, CollectibleData> = new Map();
 
   constructor(scene: THREE.Scene, assets: ChunkAssets) {
     this.scene = scene;
@@ -44,6 +52,13 @@ export class ChunkManager {
 
           grassMeshes.forEach((mesh) => this.scene.add(mesh));
           this.loadedGrass.set(k, grassMeshes);
+
+          const { group: collectibleGroup, collectibles } = scatterCollectibles(x, z, chunk);
+          this.scene.add(collectibleGroup);
+          this.loadedCollectibleGroups.set(k, collectibleGroup);
+          for (const c of collectibles) {
+            this.activeCollectibles.set(c.id, c);
+          }
         }
       }
     }
@@ -70,6 +85,24 @@ export class ChunkManager {
           grassMeshes.forEach((mesh) => this.scene.remove(mesh));
           this.loadedGrass.delete(k);
         }
+
+        const collectibleGroup = this.loadedCollectibleGroups.get(k);
+        if (collectibleGroup) {
+          this.scene.remove(collectibleGroup);
+          collectibleGroup.children.forEach((child) => {
+            if (child instanceof THREE.Mesh) {
+              child.geometry.dispose();
+              (child.material as THREE.Material).dispose();
+            }
+          });
+          this.loadedCollectibleGroups.delete(k);
+
+          for (const id of Array.from(this.activeCollectibles.keys())) {
+            if (id.startsWith(`${k},`)) {
+              this.activeCollectibles.delete(id);
+            }
+          }
+        }
       }
     }
   }
@@ -92,5 +125,34 @@ export class ChunkManager {
         }
       }
     }
+  }
+
+  updateCollectibleAnimations(elapsedTime: number) {
+    for (const group of this.loadedCollectibleGroups.values()) {
+      animateCollectibles(group, elapsedTime);
+    }
+  }
+
+  checkCollectibleCollisions(headPosition: THREE.Vector3, pickupRadius: number = 0.9): CollectibleData[] {
+    const collected: CollectibleData[] = [];
+
+    for (const [id, collectible] of this.activeCollectibles) {
+      const dx = collectible.x - headPosition.x;
+      const dz = collectible.z - headPosition.z;
+      const distance = Math.sqrt(dx * dx + dz * dz);
+
+      if (distance < pickupRadius) {
+        collected.push(collectible);
+        this.activeCollectibles.delete(id);
+
+        collectible.mesh.parent?.remove(collectible.mesh);
+        if (collectible.mesh instanceof THREE.Mesh) {
+          collectible.mesh.geometry.dispose();
+          (collectible.mesh.material as THREE.Material).dispose();
+        }
+      }
+    }
+
+    return collected;
   }
 }

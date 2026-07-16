@@ -15,11 +15,9 @@ function createGrassGroundTexture(): THREE.Texture {
   canvas.height = size;
   const ctx = canvas.getContext('2d')!;
 
-  ctx.fillStyle = '#0f4b04';
+  ctx.fillStyle = '#3a5c34';
   ctx.fillRect(0, 0, size, size);
 
-  // Base color patches — soft blotches of tonal variation so the ground
-  // doesn't read as a single flat color under the blade detail.
   const patchCount = 18;
   for (let i = 0; i < patchCount; i++) {
     const x = Math.random() * size;
@@ -40,7 +38,6 @@ function createGrassGroundTexture(): THREE.Texture {
     ctx.fill();
   }
 
-  // Sparse bare-dirt flecks for ground texture realism
   const dirtPatchCount = 6;
   for (let i = 0; i < dirtPatchCount; i++) {
     const x = Math.random() * size;
@@ -55,7 +52,7 @@ function createGrassGroundTexture(): THREE.Texture {
     ctx.fill();
   }
 
-  const bladeCount = 4500;
+  const bladeCount = 2500;
   for (let i = 0; i < bladeCount; i++) {
     const x = Math.random() * size;
     const y = Math.random() * size;
@@ -231,7 +228,6 @@ function getGrassVariant(template: THREE.Group): GrassVariant | null {
   const tipHeight = mesh.geometry.boundingBox ? mesh.geometry.boundingBox.max.y : 1;
 
   const material = (mesh.material as THREE.MeshStandardMaterial).clone();
-  // Matched to the ground texture's mid-tone blade color instead of a flat bright green
   material.color = new THREE.Color(0x3f6b3e);
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uTramplePos = trampleUniforms.uTramplePos;
@@ -448,5 +444,122 @@ export function resolveRockCollisions(
       position.x = rock.x + dx * pushOutFactor;
       position.z = rock.z + dz * pushOutFactor;
     }
+  }
+}
+
+// ---------- Collectibles / power-ups ----------
+
+export type CollectibleType = 'speed' | 'stamina' | 'score';
+
+export interface CollectibleData {
+  id: string;
+  type: CollectibleType;
+  x: number;
+  z: number;
+  mesh: THREE.Object3D;
+}
+
+export interface ChunkCollectibles {
+  group: THREE.Group;
+  collectibles: CollectibleData[];
+}
+
+const COLLECTIBLES_PER_CHUNK = 1;
+const COLLECTIBLE_SPAWN_CHANCE = 0.6;
+const COLLECTIBLE_FLOAT_HEIGHT = 0.8;
+
+const COLLECTIBLE_COLORS: Record<CollectibleType, number> = {
+  speed: 0xffcc33,
+  stamina: 0x33ccff,
+  score: 0xff44aa,
+};
+
+function createCollectibleMesh(type: CollectibleType): THREE.Object3D {
+  let geometry: THREE.BufferGeometry;
+
+  switch (type) {
+    case 'speed':
+      geometry = new THREE.ConeGeometry(0.3, 0.7, 4);
+      break;
+    case 'stamina':
+      geometry = new THREE.SphereGeometry(0.35, 12, 12);
+      break;
+    case 'score':
+      geometry = new THREE.OctahedronGeometry(0.4);
+      break;
+  }
+
+  const material = new THREE.MeshStandardMaterial({
+    color: COLLECTIBLE_COLORS[type],
+    emissive: COLLECTIBLE_COLORS[type],
+    emissiveIntensity: 0.6,
+    roughness: 0.3,
+    metalness: 0.2,
+  });
+
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.castShadow = true;
+  mesh.userData.spinSpeed = 1.2 + Math.random() * 0.6;
+  mesh.userData.bobPhase = Math.random() * Math.PI * 2;
+  mesh.userData.collectibleType = type;
+
+  return mesh;
+}
+
+export function scatterCollectibles(
+  chunkX: number,
+  chunkZ: number,
+  terrainMesh: THREE.Mesh
+): ChunkCollectibles {
+  const group = new THREE.Group();
+  const collectibles: CollectibleData[] = [];
+  const worldOffsetX = chunkX * CHUNK_SIZE;
+  const worldOffsetZ = chunkZ * CHUNK_SIZE;
+
+  for (let i = 0; i < COLLECTIBLES_PER_CHUNK; i++) {
+    const rSpawn = seededRandom(chunkX, chunkZ, 300 + i * 3.3);
+    if (rSpawn > COLLECTIBLE_SPAWN_CHANCE) continue;
+
+    const rx = seededRandom(chunkX, chunkZ, 300 + i * 3.3 + 0.7);
+    const rz = seededRandom(chunkX, chunkZ, 300 + i * 3.3 + 1.1);
+    const rt = seededRandom(chunkX, chunkZ, 300 + i * 3.3 + 1.5);
+
+    const localX = (rx - 0.5) * CHUNK_SIZE;
+    const localZ = (rz - 0.5) * CHUNK_SIZE;
+    const worldX = worldOffsetX + localX;
+    const worldZ = worldOffsetZ + localZ;
+
+    const distanceFromOrigin = Math.sqrt(worldX * worldX + worldZ * worldZ);
+    if (distanceFromOrigin < SPAWN_CLEAR_RADIUS) continue;
+
+    const types: CollectibleType[] = ['speed', 'stamina', 'score'];
+    const type = types[Math.floor(rt * types.length)];
+
+    const height = sampleHeightOnMesh(terrainMesh, worldX, worldZ);
+    const mesh = createCollectibleMesh(type);
+    mesh.position.set(localX, height + COLLECTIBLE_FLOAT_HEIGHT, localZ);
+
+    group.add(mesh);
+
+    collectibles.push({
+      id: `${chunkX},${chunkZ},${i}`,
+      type,
+      x: worldX,
+      z: worldZ,
+      mesh,
+    });
+  }
+
+  group.position.set(worldOffsetX, 0, worldOffsetZ);
+
+  return { group, collectibles };
+}
+
+export function animateCollectibles(group: THREE.Group, elapsedTime: number) {
+  for (const child of group.children) {
+    child.rotation.y = elapsedTime * child.userData.spinSpeed;
+    child.position.y =
+      (child.userData.baseY ?? (child.userData.baseY = child.position.y)) +
+      Math.sin(elapsedTime * 2 + child.userData.bobPhase) * 0.15;
   }
 }

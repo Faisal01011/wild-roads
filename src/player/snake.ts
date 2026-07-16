@@ -44,8 +44,6 @@ function createBlobShadowTexture(): THREE.Texture {
 
 const blobShadowTexture = createBlobShadowTexture();
 
-// Reused scratch vectors for the per-segment wave calculation —
-// avoids allocating new Vector3s every segment, every frame.
 const scratchDirection = new THREE.Vector3();
 const scratchPerpendicular = new THREE.Vector3();
 
@@ -62,6 +60,9 @@ export class Snake {
 
   private currentSpeed = FORWARD_SPEED;
   private targetSpeed = FORWARD_SPEED;
+
+  private speedBoostMultiplier = 1;
+  private speedBoostTimer = 0;
 
   constructor() {
     const headGroup = new THREE.Group();
@@ -153,6 +154,23 @@ export class Snake {
     return this.stamina / MAX_STAMINA;
   }
 
+  get isSpeedBoosted(): boolean {
+    return this.speedBoostTimer > 0;
+  }
+
+  get speedBoostSecondsRemaining(): number {
+    return this.speedBoostTimer;
+  }
+
+  applySpeedBoost(durationSeconds: number, multiplier: number) {
+    this.speedBoostMultiplier = multiplier;
+    this.speedBoostTimer = durationSeconds;
+  }
+
+  refillStamina(amount: number) {
+    this.stamina = Math.min(MAX_STAMINA, this.stamina + amount);
+  }
+
   addToScene(scene: THREE.Scene) {
     scene.add(this.head);
     scene.add(this.headShadow);
@@ -199,7 +217,14 @@ export class Snake {
       this.stamina = Math.min(MAX_STAMINA, this.stamina + STAMINA_REGEN_RATE * delta);
     }
 
-    this.targetSpeed = this.isBoosting ? BOOST_SPEED : FORWARD_SPEED;
+    if (this.speedBoostTimer > 0) {
+      this.speedBoostTimer = Math.max(0, this.speedBoostTimer - delta);
+      if (this.speedBoostTimer <= 0) {
+        this.speedBoostMultiplier = 1;
+      }
+    }
+
+    this.targetSpeed = (this.isBoosting ? BOOST_SPEED : FORWARD_SPEED) * this.speedBoostMultiplier;
 
     this.currentSpeed = THREE.MathUtils.lerp(
       this.currentSpeed,
@@ -257,7 +282,6 @@ export class Snake {
         const point = a.clone().lerp(b, t);
         const taperFactor = targets[targetIndex].taperFactor;
 
-        // Direction of travel at this point, using reused scratch vectors (no allocation)
         scratchDirection.copy(a).sub(b).normalize();
         scratchPerpendicular.set(-scratchDirection.z, 0, scratchDirection.x);
 

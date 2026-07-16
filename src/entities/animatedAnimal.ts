@@ -12,6 +12,7 @@ export interface AnimalConfig {
   isPredator?: boolean;
   catchDistance?: number;
   attackCooldownSeconds?: number;
+  circleEngageDistance?: number;
 }
 
 export type AnimalState =
@@ -42,10 +43,13 @@ export class AnimatedAnimal {
   private stateTimer = 0;
   private reactionDelay = 0;
   private circleDirection = Math.random() < 0.5 ? -1 : 1;
-  private circleRadius = 4 + Math.random() * 2;
+  private circleRadius = 0;
   private circleTime = 0;
   private attackCooldown = 0;
   private hasRaisedAlarm = false;
+
+  private circleEngageDistance: number;
+  private circleDisengageDistance: number;
 
   private destination = new THREE.Vector3();
   private hasDestination = false;
@@ -53,6 +57,11 @@ export class AnimatedAnimal {
   private readonly MIN_WANDER_DISTANCE = 4;
   private readonly MAX_WANDER_DISTANCE = 10;
   private readonly DESTINATION_RADIUS = 0.6;
+
+  // Separation — pushes an animal away from same-species neighbors that
+  // get too close, so fleeing deer / chasing wolves don't merge together.
+  private readonly SEPARATION_RADIUS = 2.2;
+  private readonly SEPARATION_STRENGTH = 1.1;
 
   constructor(
     position: THREE.Vector3,
@@ -64,6 +73,15 @@ export class AnimatedAnimal {
     this.mesh.position.copy(position);
 
     this.config = config;
+
+    this.circleEngageDistance =
+      config.circleEngageDistance ?? (config.catchDistance ?? 1.3) + 2.5;
+
+    this.circleDisengageDistance = this.circleEngageDistance + 1.8;
+
+    const minOrbit = (config.catchDistance ?? 1.3) + 0.8;
+    const maxOrbit = Math.max(minOrbit + 0.5, this.circleEngageDistance - 0.8);
+    this.circleRadius = THREE.MathUtils.randFloat(minOrbit, maxOrbit);
 
     if (animations.length > 0) {
       this.mixer = new THREE.AnimationMixer(this.mesh);
@@ -170,6 +188,37 @@ export class AnimatedAnimal {
     return direction;
   }
 
+  // Pushes direction away from same-species neighbors within SEPARATION_RADIUS,
+  // weighted by proximity (closer neighbors push harder). Mutates and returns
+  // the passed-in vector so it can be chained like applyHerding.
+  private applySeparation(direction: THREE.Vector3): THREE.Vector3 {
+    const push = new THREE.Vector3();
+    let count = 0;
+
+    for (const other of this.nearbyAnimals) {
+      if (other === this) continue;
+
+      const offset = this.mesh.position.clone().sub(other.mesh.position).setY(0);
+      const dist = offset.length();
+
+      if (dist < this.SEPARATION_RADIUS && dist > 0.0001) {
+        const falloff = 1 - dist / this.SEPARATION_RADIUS;
+        push.add(offset.normalize().multiplyScalar(falloff));
+        count++;
+      }
+    }
+
+    if (count === 0) return direction;
+
+    push.divideScalar(count);
+    direction.addScaledVector(push, this.SEPARATION_STRENGTH);
+
+    if (direction.lengthSq() < 0.0001) return direction;
+
+    direction.normalize();
+    return direction;
+  }
+
   update(delta: number, snakeHeadPosition: THREE.Vector3): boolean {
     const distanceToSnake = this.mesh.position.distanceTo(snakeHeadPosition);
     const previousState = this.state;
@@ -178,7 +227,8 @@ export class AnimatedAnimal {
     if (
       distanceToSnake < this.config.fleeTriggerRadius &&
       this.state !== 'alert' &&
-      this.state !== 'panic'
+      this.state !== 'panic' &&
+      this.state !== 'circle'
     ) {
       this.state = 'alert';
       this.reactionDelay = THREE.MathUtils.randFloat(0.25, 0.6);
@@ -186,7 +236,7 @@ export class AnimatedAnimal {
     }
 
     // State timers
-    if (this.state !== 'alert' && this.state !== 'panic') {
+    if (this.state !== 'alert' && this.state !== 'panic' && this.state !== 'circle') {
       this.stateTimer -= delta;
 
       if (this.stateTimer <= 0) {
@@ -294,54 +344,68 @@ export class AnimatedAnimal {
 
         break;
       }
-      case 'circle': {
 
+      case 'circle': {
         this.circleTime += delta;
 
         const toSnake = snakeHeadPosition
-            .clone()
-            .sub(this.mesh.position);
+          .clone()
+          .sub(this.mesh.position);
 
         const distance = toSnake.length();
 
         toSnake.normalize();
 
         const tangent = new THREE.Vector3(
-            -toSnake.z,
-            0,
-            toSnake.x
+          -toSnake.z,
+          0,
+          toSnake.x
         ).multiplyScalar(this.circleDirection);
 
         const move = tangent
-            .multiplyScalar(0.8)
-            .add(
-                toSnake.multiplyScalar(
-                    distance - this.circleRadius
-                )
-            );
+          .multiplyScalar(0.8)
+          .add(
+            toSnake.multiplyScalar(
+              distance - this.circleRadius
+            )
+          );
 
         move.normalize();
 
+        this.applySeparation(move);
+
         this.mesh.position.addScaledVector(
-            move,
-            this.config.wanderSpeed * 1.8 * delta
+          move,
+          this.config.wanderSpeed * 1.8 * delta
         );
 
         this.faceDirection(move, delta);
 
-        if (
-            distance < this.config.catchDistance! + 0.3 ||
-            this.circleTime > 3
-        ) {
-            this.circleTime = 0;
-            this.state = 'panic';
-            this.playStateAnimation(this.state);
+        const shouldLunge = distance < (this.config.catchDistance ?? 1.3) + 0.3;
+        const driftedTooFar = distance > this.circleDisengageDistance;
+        const timedOut = this.circleTime > 3;
+
+        if (shouldLunge || driftedTooFar || timedOut) {
+          this.circleTime = 0;
+          this.state = 'panic';
+          this.playStateAnimation(this.state);
         }
 
         break;
       }
 
       case 'panic': {
+        if (
+          this.config.isPredator &&
+          distanceToSnake < this.circleEngageDistance &&
+          distanceToSnake > (this.config.catchDistance ?? 1.3) + 0.3
+        ) {
+          this.state = 'circle';
+          this.circleTime = 0;
+          this.playStateAnimation(this.state);
+          break;
+        }
+
         const moveDirection = this.config.isPredator
           ? snakeHeadPosition
               .clone()
@@ -353,6 +417,8 @@ export class AnimatedAnimal {
               .sub(snakeHeadPosition)
               .setY(0)
               .normalize();
+
+        this.applySeparation(moveDirection);
 
         this.mesh.position.addScaledVector(
           moveDirection,
@@ -407,8 +473,6 @@ export class AnimatedAnimal {
 
     this.attackAction.reset().setEffectiveWeight(1).fadeIn(0.1).play();
 
-    // Once the bite finishes, fade back to the chase (run) animation
-    // if we're still in panic state, rather than freezing on the last attack frame.
     const onFinished = (event: { action: THREE.AnimationAction }) => {
       if (event.action !== this.attackAction) return;
       this.mixer?.removeEventListener('finished', onFinished);
@@ -442,6 +506,7 @@ export class AnimatedAnimal {
 
       case 'alert':
       case 'panic':
+      case 'circle':
         next = this.runAction;
         break;
     }
