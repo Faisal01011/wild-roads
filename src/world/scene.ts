@@ -6,8 +6,9 @@ function isMobileDevice(): boolean {
 
 export function createScene() {
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x87ceeb); // sky blue
-  scene.fog = new THREE.Fog(0x87ceeb, 40, 150);
+  const initialSkyColor = new THREE.Color(0x6f94a4);
+  scene.background = initialSkyColor;
+  scene.fog = new THREE.FogExp2(initialSkyColor, 0.0095);
 
   const camera = new THREE.PerspectiveCamera(
     60,
@@ -20,32 +21,33 @@ export function createScene() {
 
   const mobile = isMobileDevice();
 
-  // MSAA (antialias: true) resolves partially-transparent, overlapping
-  // fragments inconsistently on mobile's tile-based GPUs — this is what
-  // produces the colored speckling on soft-edged transparent sprites
-  // (clouds, sun/moon glow). Disabling it on mobile removes the artifact
-  // at the source; desktop keeps antialiasing since it doesn't exhibit this.
+  // Mobile tile-based GPUs can produce noisy edges where large transparent
+  // atmospheric sprites overlap. Desktop keeps MSAA; mobile relies on the
+  // capped pixel ratio and soft-edged source textures instead.
   const renderer = new THREE.WebGLRenderer({
     antialias: !mobile,
     powerPreference: 'high-performance',
   });
 
   renderer.setSize(window.innerWidth, window.innerHeight);
-
-  // Uncapped devicePixelRatio on high-DPI phones (often 3+) massively
-  // increases overdraw cost for the transparent sprite-heavy sky, which
-  // can push mobile GPUs into lower-precision fallback buffers — another
-  // contributor to visible dithering/speckling. Capping at 2 is standard
-  // practice and visually indistinguishable on phone screens.
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+  // Keep authored colours consistent across browsers and compress bright
+  // sunlight into a filmic range without washing out the forest palette.
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1;
+
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   document.body.appendChild(renderer.domElement);
 
-  // Handle window resizing
   const handleResize = () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   };
   window.addEventListener('resize', handleResize);
 

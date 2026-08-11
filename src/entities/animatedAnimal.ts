@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { getTerrainHeight } from '../world/chunk';
+import { createContactShadow, disposeContactShadow } from '../world/contactShadow';
 
 export interface AnimalConfig {
   wanderSpeed: number;
@@ -25,6 +26,7 @@ export type AnimalState =
 
 export class AnimatedAnimal {
   public mesh: THREE.Object3D;
+  public contactShadow: THREE.Mesh;
 
   public nearbyAnimals: AnimatedAnimal[] = [];
 
@@ -47,6 +49,8 @@ export class AnimatedAnimal {
   private circleTime = 0;
   private attackCooldown = 0;
   private hasRaisedAlarm = false;
+  private readonly shadowCasters: THREE.Mesh[] = [];
+  private castsDynamicShadow = false;
 
   private circleEngageDistance: number;
   private circleDisengageDistance: number;
@@ -71,6 +75,16 @@ export class AnimatedAnimal {
   ) {
     this.mesh = model;
     this.mesh.position.copy(position);
+    this.mesh.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.castShadow = false;
+        child.receiveShadow = true;
+        this.shadowCasters.push(child);
+      }
+    });
+
+    this.contactShadow = createContactShadow(config.isPredator ? 0.95 : 0.82);
+    this.contactShadow.position.set(position.x, 0.025, position.z);
 
     this.config = config;
 
@@ -222,6 +236,14 @@ export class AnimatedAnimal {
   update(delta: number, snakeHeadPosition: THREE.Vector3): boolean {
     const distanceToSnake = this.mesh.position.distanceTo(snakeHeadPosition);
     const previousState = this.state;
+
+    const shouldCastDynamicShadow = distanceToSnake < 18;
+    if (shouldCastDynamicShadow !== this.castsDynamicShadow) {
+      this.castsDynamicShadow = shouldCastDynamicShadow;
+      for (const mesh of this.shadowCasters) {
+        mesh.castShadow = shouldCastDynamicShadow;
+      }
+    }
 
     // Snake detected
     if (
@@ -444,6 +466,11 @@ export class AnimatedAnimal {
 
     this.mesh.position.y =
       terrainHeight + this.config.groundOffset;
+    this.contactShadow.position.set(
+      this.mesh.position.x,
+      terrainHeight + 0.025,
+      this.mesh.position.z
+    );
 
     this.mixer?.update(delta);
 
@@ -553,10 +580,11 @@ export class AnimatedAnimal {
   }
 
   dispose() {
-    if (!this.mixer) return;
-
-    this.mixer.stopAllAction();
-    this.mixer.uncacheRoot(this.mesh);
-    this.mixer = null;
+    if (this.mixer) {
+      this.mixer.stopAllAction();
+      this.mixer.uncacheRoot(this.mesh);
+      this.mixer = null;
+    }
+    disposeContactShadow(this.contactShadow);
   }
 }

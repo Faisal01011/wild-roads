@@ -56,7 +56,7 @@ export class AnimalManager {
 
       const animal = new AnimatedAnimal(position, model, animations, this.config);
       this.animals.push(animal);
-      this.scene.add(animal.mesh);
+      this.scene.add(animal.mesh, animal.contactShadow);
     } finally {
       this.loading = false;
     }
@@ -64,7 +64,7 @@ export class AnimalManager {
 
   private removeAnimal(index: number) {
     const animal = this.animals[index];
-    this.scene.remove(animal.mesh);
+    this.scene.remove(animal.mesh, animal.contactShadow);
     animal.dispose();
     this.animals.splice(index, 1);
   }
