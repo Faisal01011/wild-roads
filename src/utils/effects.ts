@@ -2,23 +2,33 @@ import * as THREE from 'three';
 
 // ---------- Screen shake ----------
 let shakeMagnitude = 0;
-let shakeDecay = 4; // how fast it fades, per second
+const shakeDecay = 4;
+let shakePhase = 0;
+let reducedMotion = false;
+const shakeOffset = new THREE.Vector3();
+
+export function setEffectsReducedMotion(reduced: boolean) {
+  reducedMotion = reduced;
+  if (reduced) shakeMagnitude = 0;
+}
 
 export function triggerShake(intensity: number) {
+  if (reducedMotion) return;
   shakeMagnitude = Math.max(shakeMagnitude, intensity);
 }
 
 export function updateShake(delta: number): THREE.Vector3 {
-  if (shakeMagnitude <= 0) return new THREE.Vector3();
+  if (reducedMotion || shakeMagnitude <= 0) return shakeOffset.set(0, 0, 0);
 
-  const offset = new THREE.Vector3(
-    (Math.random() - 0.5) * shakeMagnitude,
-    (Math.random() - 0.5) * shakeMagnitude,
-    0
+  shakePhase += delta * 64;
+  shakeOffset.set(
+    Math.sin(shakePhase * 1.7) * shakeMagnitude * 0.48,
+    Math.cos(shakePhase * 2.3) * shakeMagnitude * 0.34,
+    Math.sin(shakePhase * 1.1) * shakeMagnitude * 0.12
   );
 
   shakeMagnitude = Math.max(0, shakeMagnitude - shakeDecay * delta);
-  return offset;
+  return shakeOffset;
 }
 
 // ---------- Eat particle burst ----------
@@ -32,6 +42,7 @@ interface Burst {
 const activeBursts: Burst[] = [];
 
 export function spawnEatBurst(scene: THREE.Scene, position: THREE.Vector3) {
+  if (reducedMotion) return;
   const particleCount = 10;
   const geometry = new THREE.BufferGeometry();
   const positions = new Float32Array(particleCount * 3);
@@ -92,4 +103,15 @@ export function updateBursts(scene: THREE.Scene, delta: number) {
       activeBursts.splice(i, 1);
     }
   }
+}
+
+export function disposeBursts(scene: THREE.Scene) {
+  shakeMagnitude = 0;
+  shakeOffset.set(0, 0, 0);
+  for (const burst of activeBursts) {
+    scene.remove(burst.points);
+    burst.points.geometry.dispose();
+    (burst.points.material as THREE.Material).dispose();
+  }
+  activeBursts.length = 0;
 }
