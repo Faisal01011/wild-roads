@@ -24,6 +24,9 @@ export function setupTouchControls() {
     document.getElementById('touch-controls')?.classList.add('active');
   }
 
+  if (document.body.dataset.touchControlsReady === 'true') return;
+  document.body.dataset.touchControlsReady = 'true';
+
   bindHoldButton('btn-left', (pressed) => input.setVirtualLeft(pressed));
   bindHoldButton('btn-right', (pressed) => input.setVirtualRight(pressed));
   bindHoldButton('btn-boost', (pressed) => input.setVirtualBoost(pressed));

@@ -43,6 +43,13 @@ class InputManager {
   wantsBoost(): boolean {
     return this.isPressed('shift') || this.isPressed(' ') || this.virtualBoost;
   }
+
+  reset() {
+    this.keys.clear();
+    this.virtualLeft = false;
+    this.virtualRight = false;
+    this.virtualBoost = false;
+  }
 }
 
 export const input = new InputManager();
