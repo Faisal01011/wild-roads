@@ -23,6 +23,7 @@ export class AnimalManager {
   private animals: AnimatedAnimal[] = [];
   private config: SpeciesConfig;
   private loading = false;
+  private disposed = false;
   private hasLoggedAnimations = false;
 
   constructor(scene: THREE.Scene, config: SpeciesConfig) {
@@ -44,6 +45,8 @@ export class AnimalManager {
       );
 
       const model = await loadModel(this.config.modelPath, this.config.scaleCorrection, false, false, true);
+
+      if (this.disposed) return;
 
       const animations = getModelAnimations(this.config.modelPath);
       if (!this.hasLoggedAnimations) {
@@ -67,6 +70,7 @@ export class AnimalManager {
   }
 
   update(delta: number, snakeHeadPosition: THREE.Vector3): AnimalManagerResult {
+    if (this.disposed) return { eatenPoints: 0, attacks: 0 };
     let eatenPoints = 0;
     let attacks = 0;
 
@@ -101,5 +105,12 @@ for (const animal of this.animals) {
     }
 
     return { eatenPoints, attacks };
+  }
+
+  dispose() {
+    this.disposed = true;
+    for (let i = this.animals.length - 1; i >= 0; i--) {
+      this.removeAnimal(i);
+    }
   }
 }

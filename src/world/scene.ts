@@ -42,11 +42,19 @@ export function createScene() {
   document.body.appendChild(renderer.domElement);
 
   // Handle window resizing
-  window.addEventListener('resize', () => {
+  const handleResize = () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
-  });
+  };
+  window.addEventListener('resize', handleResize);
 
-  return { scene, camera, renderer };
+  const dispose = () => {
+    window.removeEventListener('resize', handleResize);
+    renderer.setAnimationLoop(null);
+    renderer.dispose();
+    renderer.domElement.remove();
+  };
+
+  return { scene, camera, renderer, dispose };
 }

@@ -9,21 +9,41 @@ import { updateCameraFollow } from './world/cameraFollow';
 import { ChunkManager } from './world/chunkManager';
 import { updateGrassTrample } from './world/chunk';
 import { AnimalManager } from './entities/animalManager';
-import { updateScoreDisplay, updateStaminaBar, updateStatsDisplay, spawnScorePopup } from './utils/ui';
+import {
+  hideGameOver,
+  showGameOver,
+  spawnScorePopup,
+  updateHealthDisplay,
+  updateScoreDisplay,
+  updateStaminaBar,
+  updateStatsDisplay,
+} from './utils/ui';
 import { audioManager } from './utils/audio';
 import { preloadAssets } from './utils/assetLoader';
 import type { GameAssets } from './utils/assetLoader';
 import { setupTouchControls } from './utils/touchControls';
 import { triggerShake, spawnEatBurst, updateBursts } from './utils/effects';
 import { updateFpsCounter } from './utils/fpsCounter';
+import { input } from './utils/input';
 
 // Initialize Vercel Speed Insights
 injectSpeedInsights();
 
 const BEST_SCORE_KEY = 'wildroads_best_score';
+const MAX_HEALTH = 3;
+const DAMAGE_INVULNERABILITY_SECONDS = 1;
+const MAX_FRAME_DELTA = 0.05;
 
 let isPaused = false;
 let gameStarted = false;
+
+interface GameSession {
+  pause: () => void;
+  resume: () => void;
+  destroy: () => void;
+}
+
+let activeSession: GameSession | null = null;
 
 function showMenu(mode: 'start' | 'pause') {
   const menu = document.getElementById('main-menu');
@@ -99,6 +119,7 @@ function setupMainMenu(onPlay: () => void, onResume: () => void) {
         onResume();
       } else {
         isPaused = true;
+        activeSession?.pause();
         showMenu('pause');
       }
     }
@@ -155,15 +176,35 @@ async function start() {
   }, 700);
 
   setupMainMenu(
-    () => beginGame(assets),
-    () => {}
+    () => {
+      activeSession?.destroy();
+      activeSession = beginGame(assets);
+    },
+    () => activeSession?.resume()
   );
+
+  document.getElementById('btn-play-again')?.addEventListener('click', () => {
+    hideGameOver();
+    activeSession?.destroy();
+    activeSession = beginGame(assets);
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && gameStarted && !isPaused) {
+      isPaused = true;
+      activeSession?.pause();
+      showMenu('pause');
+    }
+  });
 }
 
-function beginGame(assets: GameAssets) {
+function beginGame(assets: GameAssets): GameSession {
   gameStarted = true;
+  isPaused = false;
+  hideGameOver();
+  input.reset();
 
-  const { scene, camera, renderer } = createScene();
+  const { scene, camera, renderer, dispose: disposeScene } = createScene();
   renderer.shadowMap.enabled = true;
 
   const dayNightCycle = new DayNightCycle(scene);
@@ -211,6 +252,8 @@ function beginGame(assets: GameAssets) {
     attackCooldownSeconds: 2.5,
   });
   let score = 0;
+  let health = MAX_HEALTH;
+  let damageInvulnerabilityTimer = 0;
   let animalsEaten = 0;
   let distanceTraveled = 0;
   let bestScore = Number(localStorage.getItem(BEST_SCORE_KEY) ?? 0);
@@ -219,21 +262,34 @@ function beginGame(assets: GameAssets) {
   let scoreMultiplierTimer = 0;
 
   updateScoreDisplay(score);
+  updateHealthDisplay(health, MAX_HEALTH);
   updateStatsDisplay(distanceTraveled, animalsEaten, bestScore);
 
   const clock = new THREE.Clock();
   let elapsedTime = 0;
   let previousHeadPosition = snake.head.position.clone();
+  let animationFrameId = 0;
+  let destroyed = false;
+  let ended = false;
+
+  const finishRun = () => {
+    ended = true;
+    gameStarted = false;
+    input.reset();
+    renderBuffIndicator(0, 0);
+    showGameOver(score, bestScore, elapsedTime);
+  };
 
   function animate() {
-    requestAnimationFrame(animate);
+    if (destroyed || ended) return;
+    animationFrameId = requestAnimationFrame(animate);
 
     if (isPaused) {
       renderer.render(scene, camera);
       return;
     }
 
-    const delta = clock.getDelta();
+    const delta = Math.min(clock.getDelta(), MAX_FRAME_DELTA);
     elapsedTime += delta;
 
     updateFpsCounter();
@@ -282,6 +338,8 @@ function beginGame(assets: GameAssets) {
     const deerResult = deerManager.update(delta, snake.head.position);
     const wolfResult = wolfManager.update(delta, snake.head.position);
 
+    damageInvulnerabilityTimer = Math.max(0, damageInvulnerabilityTimer - delta);
+
     if (deerResult.eatenPoints > 0) {
       for (let i = 0; i < deerResult.eatenPoints; i++) {
         snake.grow(scene);
@@ -302,13 +360,23 @@ function beginGame(assets: GameAssets) {
       }
     }
 
-    if (wolfResult.attacks > 0) {
-      snake.shrink(scene, wolfResult.attacks);
-      score = Math.max(0, score - wolfResult.attacks);
+    if (wolfResult.attacks > 0 && damageInvulnerabilityTimer <= 0) {
+      const damage = 1;
+      health = Math.max(0, health - damage);
+      damageInvulnerabilityTimer = DAMAGE_INVULNERABILITY_SECONDS;
+      snake.shrink(scene, damage);
+      score = Math.max(0, score - damage);
 
       updateScoreDisplay(score);
-      spawnScorePopup(-wolfResult.attacks);
+      updateHealthDisplay(health, MAX_HEALTH);
+      spawnScorePopup(-damage);
       triggerShake(0.35);
+
+      if (health === 0) {
+        renderer.render(scene, camera);
+        finishRun();
+        return;
+      }
     }
 
     updateBursts(scene, delta);
@@ -319,6 +387,28 @@ function beginGame(assets: GameAssets) {
   }
 
   animate();
+
+  return {
+    pause() {
+      if (destroyed || ended) return;
+      input.reset();
+      clock.stop();
+    },
+    resume() {
+      if (destroyed || ended) return;
+      clock.start();
+    },
+    destroy() {
+      if (destroyed) return;
+      destroyed = true;
+      cancelAnimationFrame(animationFrameId);
+      deerManager.dispose();
+      wolfManager.dispose();
+      input.reset();
+      renderBuffIndicator(0, 0);
+      disposeScene();
+    },
+  };
 }
 
 start();

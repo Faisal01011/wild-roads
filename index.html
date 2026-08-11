@@ -32,6 +32,10 @@
           <span class="hud-value" id="score-value">0</span>
         </div>
       </div>
+      <div class="hud-panel health-panel" aria-label="Health">
+        <span class="hud-label">Health</span>
+        <div id="health-pips" aria-live="polite"></div>
+      </div>
     </div>
 
     <div id="hud-bottom">
@@ -72,6 +76,20 @@
         </div>
 
         <p class="menu-hint">WASD / Arrows / Buttons &nbsp;·&nbsp; Shift or Space to boost</p>
+      </div>
+    </div>
+
+    <div id="game-over" class="overlay-hidden" role="dialog" aria-modal="true" aria-labelledby="game-over-title">
+      <div class="menu-bg"></div>
+      <div class="game-over-content">
+        <p class="game-over-kicker">The wild caught you</p>
+        <h2 id="game-over-title">Run Over</h2>
+        <div class="game-over-stats">
+          <div><span>Score</span><strong id="final-score">0</strong></div>
+          <div><span>Best</span><strong id="final-best">0</strong></div>
+          <div><span>Survived</span><strong id="final-time">0:00</strong></div>
+        </div>
+        <button class="menu-btn" id="btn-play-again">Play Again</button>
       </div>
     </div>
 

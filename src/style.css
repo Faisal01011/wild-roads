@@ -135,6 +135,35 @@ canvas {
   left: 20px;
   z-index: 10;
   pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.health-panel {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 5px;
+}
+
+#health-pips {
+  display: flex;
+  gap: 7px;
+}
+
+.health-pip {
+  width: 19px;
+  height: 19px;
+  background: #d76a4d;
+  border: 2px solid #f3e9d2;
+  border-radius: 50% 50% 45% 45%;
+  box-shadow: 0 0 10px rgba(215, 106, 77, 0.45);
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.health-pip.lost {
+  opacity: 0.18;
+  transform: scale(0.72);
 }
 
 #hud-bottom {
@@ -418,6 +447,81 @@ body.is-touch-device #hud-bottom {
 }
 .menu-btn-hidden {
   display: none;
+}
+
+/* ---------- Game over ---------- */
+
+#game-over {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(20, 33, 15, 0.92);
+  transition: opacity 0.35s ease;
+}
+
+#game-over.overlay-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.game-over-content {
+  position: relative;
+  width: min(440px, calc(100vw - 40px));
+  text-align: center;
+  color: var(--color-parchment);
+}
+
+.game-over-kicker {
+  color: var(--color-amber);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+#game-over-title {
+  margin-top: 4px;
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: clamp(64px, 14vw, 100px);
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+
+.game-over-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 24px 0 28px;
+}
+
+.game-over-stats div {
+  padding: 13px 8px;
+  border: 1px solid rgba(212, 164, 76, 0.3);
+  border-radius: 9px;
+  background: rgba(59, 42, 30, 0.55);
+}
+
+.game-over-stats span,
+.game-over-stats strong {
+  display: block;
+}
+
+.game-over-stats span {
+  color: rgba(243, 233, 210, 0.55);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.game-over-stats strong {
+  margin-top: 2px;
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 27px;
+  color: var(--color-parchment);
 }
 .score-popup-negative {
   color: #e05a4e;
