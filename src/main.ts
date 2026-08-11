@@ -4,6 +4,9 @@ import { injectSpeedInsights } from '@vercel/speed-insights';
 import { createScene } from './world/scene';
 import { DayNightCycle, getAtmosphereDebugOptions } from './world/lighting';
 import { SkyObjects } from './world/sky';
+import { HorizonLandmarks } from './world/horizonLandmarks';
+import { BIOME_IDS, getBiomeDebugPosition } from './world/biomes';
+import type { BiomeId } from './world/biomes';
 import { Snake } from './player/snake';
 import { updateCameraFollow } from './world/cameraFollow';
 import { ChunkManager } from './world/chunkManager';
@@ -38,6 +41,15 @@ const BEST_SCORE_KEY = 'wildroads_best_score';
 const MAX_HEALTH = 3;
 const DAMAGE_INVULNERABILITY_SECONDS = 1;
 const MAX_FRAME_DELTA = 0.05;
+
+function getBiomeDebugStart(): THREE.Vector2 | null {
+  const params = new URLSearchParams(window.location.search);
+  const biome = params.get('biome');
+  if (params.get('debug') !== '1' || !biome || !BIOME_IDS.includes(biome as BiomeId)) {
+    return null;
+  }
+  return getBiomeDebugPosition(biome as BiomeId);
+}
 
 let isPaused = false;
 let gameStarted = false;
@@ -287,10 +299,14 @@ function beginGame(assets: GameAssets): GameSession {
 
   const dayNightCycle = new DayNightCycle(scene, renderer, getAtmosphereDebugOptions());
   const skyObjects = new SkyObjects(scene);
+  const horizonLandmarks = new HorizonLandmarks(scene);
 
   const snake = new Snake();
+  const biomeDebugStart = getBiomeDebugStart();
+  if (biomeDebugStart) snake.setStartPosition(biomeDebugStart.x, biomeDebugStart.y);
   snake.addToScene(scene);
   skyObjects.update(0, dayNightCycle.currentFrame, snake.head.position);
+  horizonLandmarks.update(snake.head.position);
   setupTouchControls();
 
   const chunkManager = new ChunkManager(scene, assets);
@@ -309,6 +325,9 @@ function beginGame(assets: GameAssets): GameSession {
     groundOffset: 0.3,
     wanderAnimationPattern: /^walk$/i,
     fleeAnimationPattern: /^gallop$/i,
+    spawnClearRadius: 1.1,
+    isSpawnPositionClear: (position, radius) =>
+      chunkManager.isPositionClear(position.x, position.z, radius),
   });
 
   const wolfManager = new AnimalManager(scene, {
@@ -329,6 +348,9 @@ function beginGame(assets: GameAssets): GameSession {
     isPredator: true,
     catchDistance: 1.3,
     attackCooldownSeconds: 2.5,
+    spawnClearRadius: 1.2,
+    isSpawnPositionClear: (position, radius) =>
+      chunkManager.isPositionClear(position.x, position.z, radius),
   });
   let score = 0;
   let health = MAX_HEALTH;
@@ -384,9 +406,10 @@ function beginGame(assets: GameAssets): GameSession {
 
     const atmosphere = dayNightCycle.update(delta, snake.head.position);
     skyObjects.update(delta, atmosphere, snake.head.position);
+    horizonLandmarks.update(snake.head.position);
 
-    const rockColliders = chunkManager.getRockColliders();
-    snake.update(delta, rockColliders);
+    const terrainColliders = chunkManager.getTerrainColliders();
+    snake.update(delta, terrainColliders);
     updateCameraFollow(camera, snake, delta);
     chunkManager.update(snake.head.position);
 
@@ -494,6 +517,8 @@ function beginGame(assets: GameAssets): GameSession {
       cancelAnimationFrame(animationFrameId);
       deerManager.dispose();
       wolfManager.dispose();
+      chunkManager.dispose();
+      horizonLandmarks.dispose();
       skyObjects.dispose();
       dayNightCycle.dispose();
       input.reset();

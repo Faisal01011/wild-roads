@@ -164,6 +164,41 @@ const PRELOAD_DEFINITIONS: PreloadDefinition[] = [
   { path: '/models/Grass_Small.fbx', scale: 0.0089, label: 'Opening the trail' },
 ];
 
+function createProceduralConifer(): THREE.Group {
+  const conifer = new THREE.Group();
+  conifer.name = 'procedural-conifer';
+
+  const trunkMaterial = new THREE.MeshStandardMaterial({
+    color: 0x5d4935,
+    roughness: 0.94,
+  });
+  const needleMaterial = new THREE.MeshStandardMaterial({
+    color: 0x355b3f,
+    roughness: 0.9,
+  });
+
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.22, 2.8, 7), trunkMaterial);
+  trunk.name = 'conifer-trunk';
+  trunk.position.y = 1.4;
+  conifer.add(trunk);
+
+  const crownLayers = [
+    { radius: 1.28, height: 2.1, y: 2.15 },
+    { radius: 1.04, height: 1.9, y: 2.95 },
+    { radius: 0.78, height: 1.65, y: 3.66 },
+  ];
+
+  crownLayers.forEach(({ radius, height, y }, index) => {
+    const crown = new THREE.Mesh(new THREE.ConeGeometry(radius, height, 8, 1), needleMaterial);
+    crown.name = `conifer-crown-${index}`;
+    crown.position.y = y;
+    crown.rotation.y = index * 0.38;
+    conifer.add(crown);
+  });
+
+  return conifer;
+}
+
 export async function preloadAssets(
   onProgress?: (progress: AssetLoadProgress) => void
 ): Promise<GameAssets> {
@@ -184,7 +219,7 @@ export async function preloadAssets(
     models;
 
   return {
-    trees: [tree1, tree2, tree3, tree4],
+    trees: [tree1, tree2, tree3, tree4, createProceduralConifer()],
     bushes: [bush1, bush2, bush3],
     rocks: [rock1, rock2, rock3],
     grassVariants: [grassLarge, grassLargeExtruded, grassSmall],
