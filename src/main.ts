@@ -8,7 +8,7 @@ import { HorizonLandmarks } from './world/horizonLandmarks';
 import { BIOME_IDS, getBiomeDebugPosition } from './world/biomes';
 import type { BiomeId } from './world/biomes';
 import { Snake } from './player/snake';
-import { updateCameraFollow } from './world/cameraFollow';
+import { CameraFollowRig } from './world/cameraFollow';
 import { ChunkManager } from './world/chunkManager';
 import { updateGrassTrample } from './world/chunk';
 import { AnimalManager } from './entities/animalManager';
@@ -30,9 +30,20 @@ import { audioManager } from './utils/audio';
 import { preloadAssets } from './utils/assetLoader';
 import type { GameAssets } from './utils/assetLoader';
 import { setupTouchControls } from './utils/touchControls';
-import { triggerShake, spawnEatBurst, updateBursts } from './utils/effects';
+import {
+  disposeBursts,
+  setEffectsReducedMotion,
+  spawnEatBurst,
+  triggerShake,
+  updateBursts,
+} from './utils/effects';
 import { updateFpsCounter } from './utils/fpsCounter';
 import { input } from './utils/input';
+import {
+  getReducedMotion,
+  subscribeMotionPreference,
+  toggleReducedMotionPreference,
+} from './utils/motionPreference';
 
 // Initialize Vercel Speed Insights
 injectSpeedInsights();
@@ -51,6 +62,18 @@ function getBiomeDebugStart(): THREE.Vector2 | null {
   return getBiomeDebugPosition(biome as BiomeId);
 }
 
+function getPlayerDebugOptions() {
+  const parameters = new URLSearchParams(window.location.search);
+  if (parameters.get('debug') !== '1') {
+    return { longSnake: false, forceBoost: false, showHit: false };
+  }
+  return {
+    longSnake: parameters.get('snake') === 'long',
+    forceBoost: parameters.get('boost') === '1',
+    showHit: parameters.get('hit') === '1',
+  };
+}
+
 let isPaused = false;
 let gameStarted = false;
 let menuHideTimer = 0;
@@ -58,10 +81,22 @@ let menuHideTimer = 0;
 interface GameSession {
   pause: () => void;
   resume: () => void;
+  setReducedMotion: (reduced: boolean) => void;
   destroy: () => void;
 }
 
 let activeSession: GameSession | null = null;
+
+function applyMotionPreference(reduced: boolean) {
+  document.body.classList.toggle('reduce-motion', reduced);
+  setEffectsReducedMotion(reduced);
+  activeSession?.setReducedMotion(reduced);
+
+  const button = document.getElementById('btn-toggle-motion');
+  const status = document.getElementById('motion-setting-status');
+  button?.setAttribute('aria-pressed', String(reduced));
+  if (status) status.textContent = reduced ? 'Reduced' : 'Full';
+}
 
 function showMenu(mode: 'start' | 'pause') {
   const menu = document.getElementById('main-menu');
@@ -141,6 +176,7 @@ function setupMainMenu(onPlay: () => void, onResume: () => void) {
   const btnOptions = document.getElementById('btn-options');
   const btnBack = document.getElementById('btn-back');
   const btnToggleSound = document.getElementById('btn-toggle-sound');
+  const btnToggleMotion = document.getElementById('btn-toggle-motion');
   const btnPause = document.getElementById('btn-pause');
   const menuPanelLabel = document.getElementById('menu-panel-label');
   const soundSettingStatus = document.getElementById('sound-setting-status');
@@ -182,6 +218,10 @@ function setupMainMenu(onPlay: () => void, onResume: () => void) {
   btnToggleSound?.addEventListener('click', () => {
     audioManager.toggleMute();
     updateSoundSetting();
+  });
+
+  btnToggleMotion?.addEventListener('click', () => {
+    toggleReducedMotionPreference();
   });
 
   btnPlay?.addEventListener('click', () => {
@@ -237,6 +277,8 @@ function setupMainMenu(onPlay: () => void, onResume: () => void) {
 async function start() {
   document.getElementById('btn-retry-load')?.addEventListener('click', () => window.location.reload());
   updateMenuBestScore(Number(localStorage.getItem(BEST_SCORE_KEY) ?? 0));
+  subscribeMotionPreference(applyMotionPreference);
+  applyMotionPreference(getReducedMotion());
   setupTouchControls();
 
   const assets = await preloadAssets(updateLoadingProgress);
@@ -301,15 +343,26 @@ function beginGame(assets: GameAssets): GameSession {
   const skyObjects = new SkyObjects(scene);
   const horizonLandmarks = new HorizonLandmarks(scene);
 
-  const snake = new Snake();
+  const reducedMotion = getReducedMotion();
+  const snake = new Snake({ reducedMotion });
   const biomeDebugStart = getBiomeDebugStart();
   if (biomeDebugStart) snake.setStartPosition(biomeDebugStart.x, biomeDebugStart.y);
   snake.addToScene(scene);
+  const playerDebugOptions = getPlayerDebugOptions();
+  if (playerDebugOptions.longSnake) {
+    while (snake.length < 16) snake.grow(scene);
+    snake.setStartPosition(snake.head.position.x, snake.head.position.z);
+  }
+  if (playerDebugOptions.forceBoost) input.setVirtualBoost(true);
+  if (playerDebugOptions.showHit) snake.triggerHit(8);
   skyObjects.update(0, dayNightCycle.currentFrame, snake.head.position);
   horizonLandmarks.update(snake.head.position);
   setupTouchControls();
 
   const chunkManager = new ChunkManager(scene, assets);
+  chunkManager.update(snake.head.position);
+  const cameraRig = new CameraFollowRig(camera, reducedMotion);
+  cameraRig.snapToSnake(snake, chunkManager.getTerrainColliders());
 
   const deerManager = new AnimalManager(scene, {
     modelPath: '/models/Deer/Deer.gltf',
@@ -408,10 +461,10 @@ function beginGame(assets: GameAssets): GameSession {
     skyObjects.update(delta, atmosphere, snake.head.position);
     horizonLandmarks.update(snake.head.position);
 
+    chunkManager.update(snake.head.position);
     const terrainColliders = chunkManager.getTerrainColliders();
     snake.update(delta, terrainColliders);
-    updateCameraFollow(camera, snake, delta);
-    chunkManager.update(snake.head.position);
+    cameraRig.update(snake, delta, terrainColliders);
 
     if (Math.floor(elapsedTime * 20) !== Math.floor((elapsedTime - delta) * 20)) {
       chunkManager.updateWind(elapsedTime);
@@ -476,6 +529,7 @@ function beginGame(assets: GameAssets): GameSession {
       const damage = 1;
       health = Math.max(0, health - damage);
       damageInvulnerabilityTimer = DAMAGE_INVULNERABILITY_SECONDS;
+      snake.triggerHit(DAMAGE_INVULNERABILITY_SECONDS);
       snake.shrink(scene, damage);
       score = Math.max(0, score - damage);
 
@@ -511,6 +565,11 @@ function beginGame(assets: GameAssets): GameSession {
       if (destroyed || ended) return;
       clock.start();
     },
+    setReducedMotion(reduced: boolean) {
+      if (destroyed) return;
+      snake.setReducedMotion(reduced);
+      cameraRig.setReducedMotion(reduced);
+    },
     destroy() {
       if (destroyed) return;
       destroyed = true;
@@ -521,6 +580,8 @@ function beginGame(assets: GameAssets): GameSession {
       horizonLandmarks.dispose();
       skyObjects.dispose();
       dayNightCycle.dispose();
+      disposeBursts(scene);
+      snake.dispose(scene);
       input.reset();
       updateBuffDisplay(0, 0);
       disposeScene();
