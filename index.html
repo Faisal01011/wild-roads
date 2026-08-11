@@ -2,8 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Wild Roads</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#10271f" />
+    <meta
+      name="description"
+      content="Wild Roads — an endless wilderness survival adventure. Hunt, grow, and outlast the wild."
+    />
+    <title>Wild Roads — Survive the Untamed</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -12,85 +18,282 @@
     />
   </head>
   <body>
-    <div id="loading-screen">
-      <div class="loading-bg"></div>
-      <div class="loading-content">
-        <h1 class="loading-title">WILD<span>ROADS</span></h1>
-        <p class="loading-tagline">Hunt&nbsp;&nbsp;·&nbsp;&nbsp;Grow&nbsp;&nbsp;·&nbsp;&nbsp;Survive</p>
-        <div class="loading-trail">
-          <span></span><span></span><span></span><span></span><span></span><span></span>
+    <div id="loading-screen" aria-live="polite" aria-busy="true">
+      <div class="cinematic-backdrop" aria-hidden="true">
+        <div class="backdrop-sky"></div>
+        <div class="backdrop-sun"></div>
+        <div class="backdrop-ridge backdrop-ridge-far"></div>
+        <div class="backdrop-ridge backdrop-ridge-near"></div>
+        <div class="backdrop-forest backdrop-forest-far"></div>
+        <div class="backdrop-forest backdrop-forest-near"></div>
+        <div class="backdrop-mist"></div>
+        <div class="backdrop-grain"></div>
+      </div>
+
+      <main class="loading-content">
+        <div class="brand-lockup brand-lockup-loading">
+          <p class="brand-overline">A wilderness survival journey</p>
+          <h1 class="brand-title">Wild <span>Roads</span></h1>
+          <p class="brand-motto">Hunt <i></i> Grow <i></i> Survive</p>
         </div>
-        <p class="loading-status">Entering the wild...</p>
+
+        <div class="loading-meter">
+          <div class="loading-meter-header">
+            <span id="loading-status">Reading the trail</span>
+            <span id="loading-percentage">0%</span>
+          </div>
+          <div
+            id="loading-progress"
+            role="progressbar"
+            aria-label="Loading game assets"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="0"
+          >
+            <div id="loading-progress-fill"></div>
+          </div>
+          <p class="loading-detail" id="loading-detail">Preparing the wilderness…</p>
+          <button class="menu-button menu-button-primary loading-retry" id="btn-retry-load" type="button">
+            Try Again
+          </button>
+        </div>
+      </main>
+    </div>
+
+    <div id="damage-vignette" aria-hidden="true"></div>
+
+    <div id="game-hud" aria-label="Game status" aria-hidden="true" inert>
+      <div class="hud-topbar">
+        <section class="hud-card health-card" aria-label="Health">
+          <div class="hud-card-heading">
+            <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M19.8 4.2C13.2 4.4 7.4 7.1 4.7 12c-1.9 3.4-.5 6.8 2.2 7.6 2.9.9 5.4-1.4 6.4-4.6.7-2.3 2.3-5.4 6.5-10.8Z" />
+              <path d="M5.4 18.7c2.5-4.2 6-7.3 10.6-9.4" />
+            </svg>
+            <span>Vitality</span>
+          </div>
+          <div id="health-pips" aria-live="polite"></div>
+        </section>
+
+        <section class="hud-card score-card" aria-label="Current score">
+          <span class="hud-eyebrow">Trail score</span>
+          <div class="score-line">
+            <svg class="ui-icon score-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m12 2 3 6.4L22 12l-7 3.6L12 22l-3-6.4L2 12l7-3.6L12 2Z" />
+            </svg>
+            <span id="score-value">0</span>
+          </div>
+        </section>
+
+        <button id="btn-pause" class="icon-button pause-button" type="button" aria-label="Pause game">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="6" y="5" width="4" height="14" rx="1"></rect>
+            <rect x="14" y="5" width="4" height="14" rx="1"></rect>
+          </svg>
+        </button>
+      </div>
+
+      <aside id="hud-stats" class="hud-card" aria-label="Run statistics">
+        <div class="stat-row">
+          <span class="stat-label">Distance</span>
+          <span class="stat-value" id="distance-value">0m</span>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat-row">
+          <span class="stat-label">Wildlife</span>
+          <span class="stat-value" id="eaten-value">0</span>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat-row">
+          <span class="stat-label">Best</span>
+          <span class="stat-value" id="best-value">0</span>
+        </div>
+      </aside>
+
+      <section id="stamina-panel" aria-label="Boost stamina">
+        <div
+          id="stamina-meter"
+          role="progressbar"
+          aria-label="Boost stamina"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow="100"
+          style="--stamina-angle: 360deg"
+        >
+          <div class="stamina-meter-inner">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m13.2 2-8 11.1h5.3L9.8 22l9-12.2h-5.6V2Z" />
+            </svg>
+            <span id="stamina-value">100</span>
+          </div>
+        </div>
+        <div class="stamina-copy">
+          <span>Boost</span>
+          <small>Hold Shift</small>
+        </div>
+      </section>
+
+      <div id="buff-indicator" aria-live="polite"></div>
+
+      <div id="touch-controls" aria-label="Touch controls">
+        <button id="btn-left" class="touch-button" type="button" aria-label="Turn left">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7" /></svg>
+        </button>
+        <button id="btn-boost" class="touch-button touch-button-boost" type="button" aria-label="Boost">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13.2 2-8 11.1h5.3L9.8 22l9-12.2h-5.6V2Z" /></svg>
+        </button>
+        <button id="btn-right" class="touch-button" type="button" aria-label="Turn right">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg>
+        </button>
       </div>
     </div>
 
-    <div id="hud-top">
-      <div class="hud-panel">
-        <span class="hud-icon">◆</span>
-        <div class="hud-text">
-          <span class="hud-label">Score</span>
-          <span class="hud-value" id="score-value">0</span>
-        </div>
+    <div id="main-menu" role="dialog" aria-modal="true" aria-labelledby="menu-heading" aria-hidden="true" inert>
+      <div class="cinematic-backdrop" aria-hidden="true">
+        <div class="backdrop-sky"></div>
+        <div class="backdrop-sun"></div>
+        <div class="backdrop-ridge backdrop-ridge-far"></div>
+        <div class="backdrop-ridge backdrop-ridge-near"></div>
+        <div class="backdrop-forest backdrop-forest-far"></div>
+        <div class="backdrop-forest backdrop-forest-near"></div>
+        <div class="backdrop-mist"></div>
+        <div class="backdrop-grain"></div>
       </div>
-      <div class="hud-panel health-panel" aria-label="Health">
-        <span class="hud-label">Health</span>
-        <div id="health-pips" aria-live="polite"></div>
-      </div>
+      <div class="menu-scrim" aria-hidden="true"></div>
+
+      <main class="menu-layout">
+        <section class="menu-story">
+          <div class="brand-lockup">
+            <p class="brand-overline">Endless wilderness survival</p>
+            <div class="brand-title" aria-label="Wild Roads">Wild <span>Roads</span></div>
+          </div>
+          <p id="menu-kicker" class="section-kicker">The trail is calling</p>
+          <h1 id="menu-heading">Enter the untamed.</h1>
+          <p id="menu-description" class="menu-description">
+            Follow the winding trail, hunt through the undergrowth, and grow strong enough to outlast what hunts you.
+          </p>
+          <div class="menu-best">
+            <span>Personal best</span>
+            <strong id="menu-best-value">0</strong>
+          </div>
+        </section>
+
+        <section class="menu-card" aria-label="Game menu">
+          <div class="menu-card-header">
+            <span class="menu-card-index">WR / 01</span>
+            <span id="menu-panel-label">Begin a new run</span>
+          </div>
+
+          <div class="menu-panel" id="menu-panel-main">
+            <button class="menu-button menu-button-primary menu-button-hidden" id="btn-resume" type="button">
+              <span class="menu-button-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="m9 6 9 6-9 6V6Z" /></svg>
+              </span>
+              <span class="menu-button-copy"><strong>Resume trail</strong><small>Return to the wild</small></span>
+              <span class="menu-button-arrow" aria-hidden="true">↗</span>
+            </button>
+            <button class="menu-button menu-button-primary" id="btn-play" type="button">
+              <span class="menu-button-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="m9 6 9 6-9 6V6Z" /></svg>
+              </span>
+              <span class="menu-button-copy"><strong>Start journey</strong><small>Begin a fresh run</small></span>
+              <span class="menu-button-arrow" aria-hidden="true">↗</span>
+            </button>
+            <button class="menu-button menu-button-secondary" id="btn-options" type="button">
+              <span class="menu-button-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M6 14v6" />
+                </svg>
+              </span>
+              <span class="menu-button-copy"><strong>Settings</strong><small>Audio and preferences</small></span>
+              <span class="menu-button-arrow" aria-hidden="true">→</span>
+            </button>
+          </div>
+
+          <div class="menu-panel menu-panel-hidden" id="menu-panel-options">
+            <button
+              class="menu-button menu-button-secondary setting-button"
+              id="btn-toggle-sound"
+              type="button"
+              aria-pressed="false"
+            >
+              <span class="menu-button-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M5 10v4h4l5 4V6l-5 4H5Z" />
+                  <path d="M17 9a4 4 0 0 1 0 6M19.5 6.5a8 8 0 0 1 0 11" />
+                </svg>
+              </span>
+              <span class="menu-button-copy"><strong>Forest audio</strong><small id="sound-setting-status">On</small></span>
+              <span class="toggle-track" aria-hidden="true"><span></span></span>
+            </button>
+            <button class="menu-button menu-button-quiet" id="btn-back" type="button">
+              <span aria-hidden="true">←</span>
+              Back to menu
+            </button>
+          </div>
+
+          <div class="control-guide" aria-label="Controls">
+            <div class="keyboard-control"><kbd>WASD</kbd><span>Steer</span></div>
+            <div class="keyboard-control"><kbd>Shift</kbd><span>Boost</span></div>
+            <div class="keyboard-control"><kbd>Esc</kbd><span>Pause</span></div>
+            <div class="touch-control-hint"><kbd>Touch</kbd><span>Trail controls appear in game</span></div>
+          </div>
+        </section>
+      </main>
+
+      <footer class="menu-footer">
+        <span>Wilderness protocol 0.1</span>
+        <span class="menu-footer-status"><i></i> Trail ready</span>
+      </footer>
     </div>
 
-    <div id="hud-bottom">
-      <div class="hud-panel stamina-panel">
-        <span class="hud-label">Stamina</span>
-        <div id="stamina-bar-container">
-          <div id="stamina-bar-fill"></div>
-        </div>
-      </div>
-    </div>
+    <div id="game-over" class="overlay-hidden" role="dialog" aria-modal="true" aria-labelledby="game-over-title" aria-hidden="true" inert>
+      <div class="end-screen-scrim" aria-hidden="true"></div>
+      <main class="game-over-layout">
+        <section class="game-over-story">
+          <div class="brand-lockup brand-lockup-small">
+            <p class="brand-overline">Wild Roads</p>
+            <div class="brand-title">The trail remembers.</div>
+          </div>
+          <p class="game-over-quote">“Every ending leaves a mark in the wild.”</p>
+        </section>
 
-    <div id="touch-controls">
-      <button id="btn-left" class="touch-btn" aria-label="Turn left">‹</button>
-      <button id="btn-boost" class="touch-btn touch-btn-boost" aria-label="Boost">⚡</button>
-      <button id="btn-right" class="touch-btn" aria-label="Turn right">›</button>
-    </div>
+        <section class="game-over-card">
+          <p class="section-kicker">The wild caught you</p>
+          <div id="new-record-badge" class="new-record-badge" hidden>New personal best</div>
+          <h2 id="game-over-title">Run over</h2>
+          <p class="game-over-copy">The trail ends here, but the wilderness is ready when you are.</p>
 
-    <div id="hud-stats">
-      <div class="stat-row"><span class="stat-label">Distance</span><span class="stat-value" id="distance-value">0m</span></div>
-      <div class="stat-row"><span class="stat-label">Eaten</span><span class="stat-value" id="eaten-value">0</span></div>
-      <div class="stat-row"><span class="stat-label">Best</span><span class="stat-value" id="best-value">0</span></div>
-    </div>
+          <div class="game-over-stats">
+            <div class="game-over-stat game-over-stat-featured">
+              <span>Final score</span>
+              <strong id="final-score">0</strong>
+            </div>
+            <div class="game-over-stat">
+              <span>Survived</span>
+              <strong id="final-time">0:00</strong>
+            </div>
+            <div class="game-over-stat">
+              <span>Distance</span>
+              <strong id="final-distance">0m</strong>
+            </div>
+            <div class="game-over-stat">
+              <span>Wildlife</span>
+              <strong id="final-eaten">0</strong>
+            </div>
+          </div>
 
-    <div id="main-menu">
-      <div class="menu-bg"></div>
-      <div class="menu-content">
-        <h1 class="menu-title">WILD<span>ROADS</span></h1>
+          <p class="best-score-line">Personal best <strong id="final-best">0</strong></p>
 
-        <div class="menu-panel" id="menu-panel-main">
-          <button class="menu-btn menu-btn-hidden" id="btn-resume">Resume</button>
-          <button class="menu-btn" id="btn-play">Play</button>
-          <button class="menu-btn menu-btn-secondary" id="btn-options">Options</button>
-        </div>
-
-        <div class="menu-panel menu-panel-hidden" id="menu-panel-options">
-          <button class="menu-btn" id="btn-toggle-sound">Sound: On</button>
-          <button class="menu-btn menu-btn-secondary" id="btn-back">Back</button>
-        </div>
-
-        <p class="menu-hint">WASD / Arrows / Buttons &nbsp;·&nbsp; Shift or Space to boost</p>
-      </div>
-    </div>
-
-    <div id="game-over" class="overlay-hidden" role="dialog" aria-modal="true" aria-labelledby="game-over-title">
-      <div class="menu-bg"></div>
-      <div class="game-over-content">
-        <p class="game-over-kicker">The wild caught you</p>
-        <h2 id="game-over-title">Run Over</h2>
-        <div class="game-over-stats">
-          <div><span>Score</span><strong id="final-score">0</strong></div>
-          <div><span>Best</span><strong id="final-best">0</strong></div>
-          <div><span>Survived</span><strong id="final-time">0:00</strong></div>
-        </div>
-        <button class="menu-btn" id="btn-play-again">Play Again</button>
-      </div>
+          <div class="game-over-actions">
+            <button class="menu-button menu-button-primary" id="btn-play-again" type="button">
+              <span class="menu-button-copy"><strong>Run again</strong><small>Return to the trail</small></span>
+              <span class="menu-button-arrow" aria-hidden="true">↗</span>
+            </button>
+            <button class="menu-button menu-button-quiet" id="btn-return-menu" type="button">Return to main menu</button>
+          </div>
+        </section>
+      </main>
     </div>
 
     <script type="module" src="/src/main.ts"></script>

@@ -12,8 +12,13 @@ import { AnimalManager } from './entities/animalManager';
 import {
   hideGameOver,
   showGameOver,
+  showLoadingError,
   spawnScorePopup,
+  triggerDamageFeedback,
+  updateBuffDisplay,
   updateHealthDisplay,
+  updateLoadingProgress,
+  updateMenuBestScore,
   updateScoreDisplay,
   updateStaminaBar,
   updateStatsDisplay,
@@ -36,6 +41,7 @@ const MAX_FRAME_DELTA = 0.05;
 
 let isPaused = false;
 let gameStarted = false;
+let menuHideTimer = 0;
 
 interface GameSession {
   pause: () => void;
@@ -49,26 +55,68 @@ function showMenu(mode: 'start' | 'pause') {
   const menu = document.getElementById('main-menu');
   const btnPlay = document.getElementById('btn-play');
   const btnResume = document.getElementById('btn-resume');
+  const panelMain = document.getElementById('menu-panel-main');
+  const panelOptions = document.getElementById('menu-panel-options');
+  const menuKicker = document.getElementById('menu-kicker');
+  const menuHeading = document.getElementById('menu-heading');
+  const menuDescription = document.getElementById('menu-description');
+  const menuPanelLabel = document.getElementById('menu-panel-label');
+  window.clearTimeout(menuHideTimer);
 
   if (menu) {
-    menu.style.display = 'flex';
+    menu.style.display = 'grid';
+    menu.inert = false;
     void menu.offsetWidth;
     menu.classList.remove('hidden');
+    menu.setAttribute('aria-hidden', 'false');
   }
 
-  if (mode === 'pause') {
-    btnPlay?.classList.add('menu-btn-hidden');
-    btnResume?.classList.remove('menu-btn-hidden');
-  } else {
-    btnPlay?.classList.remove('menu-btn-hidden');
-    btnResume?.classList.add('menu-btn-hidden');
+  panelMain?.classList.remove('menu-panel-hidden');
+  panelOptions?.classList.add('menu-panel-hidden');
+  const gameHud = document.getElementById('game-hud');
+  if (gameHud) {
+    gameHud.inert = true;
+    gameHud.setAttribute('aria-hidden', 'true');
   }
+  document.body.classList.add('menu-open');
+  document.body.classList.toggle('menu-is-pause', mode === 'pause');
+
+  if (mode === 'pause') {
+    btnPlay?.classList.add('menu-button-hidden');
+    btnResume?.classList.remove('menu-button-hidden');
+    if (menuKicker) menuKicker.textContent = 'A quiet moment';
+    if (menuHeading) menuHeading.textContent = 'Trail paused.';
+    if (menuDescription) {
+      menuDescription.textContent = 'The wilderness will wait. Return when you are ready to keep moving.';
+    }
+    if (menuPanelLabel) menuPanelLabel.textContent = 'Pause menu';
+  } else {
+    btnPlay?.classList.remove('menu-button-hidden');
+    btnResume?.classList.add('menu-button-hidden');
+    if (menuKicker) menuKicker.textContent = 'The trail is calling';
+    if (menuHeading) menuHeading.textContent = 'Enter the untamed.';
+    if (menuDescription) {
+      menuDescription.textContent =
+        'Follow the winding trail, hunt through the undergrowth, and grow strong enough to outlast what hunts you.';
+    }
+    if (menuPanelLabel) menuPanelLabel.textContent = 'Begin a new run';
+  }
+
+  window.setTimeout(() => (mode === 'pause' ? btnResume : btnPlay)?.focus(), 80);
 }
 
 function hideMenu() {
   const menu = document.getElementById('main-menu');
   menu?.classList.add('hidden');
-  setTimeout(() => {
+  menu?.setAttribute('aria-hidden', 'true');
+  if (menu) menu.inert = true;
+  const gameHud = document.getElementById('game-hud');
+  if (gameHud && gameStarted) {
+    gameHud.inert = false;
+    gameHud.setAttribute('aria-hidden', 'false');
+  }
+  document.body.classList.remove('menu-open', 'menu-is-pause');
+  menuHideTimer = window.setTimeout(() => {
     if (menu) menu.style.display = 'none';
   }, 500);
 }
@@ -81,22 +129,47 @@ function setupMainMenu(onPlay: () => void, onResume: () => void) {
   const btnOptions = document.getElementById('btn-options');
   const btnBack = document.getElementById('btn-back');
   const btnToggleSound = document.getElementById('btn-toggle-sound');
+  const btnPause = document.getElementById('btn-pause');
+  const menuPanelLabel = document.getElementById('menu-panel-label');
+  const soundSettingStatus = document.getElementById('sound-setting-status');
+
+  const updateSoundSetting = () => {
+    const muted = audioManager.isMuted();
+    btnToggleSound?.setAttribute('aria-pressed', String(muted));
+    if (soundSettingStatus) soundSettingStatus.textContent = muted ? 'Muted' : 'On';
+  };
+
+  const pauseGame = () => {
+    if (!gameStarted || isPaused) return;
+    isPaused = true;
+    activeSession?.pause();
+    showMenu('pause');
+  };
+
+  const resumeGame = () => {
+    if (!gameStarted || !isPaused) return;
+    isPaused = false;
+    hideMenu();
+    onResume();
+  };
 
   btnOptions?.addEventListener('click', () => {
     panelMain?.classList.add('menu-panel-hidden');
     panelOptions?.classList.remove('menu-panel-hidden');
+    if (menuPanelLabel) menuPanelLabel.textContent = 'Settings';
+    window.setTimeout(() => btnToggleSound?.focus(), 50);
   });
 
   btnBack?.addEventListener('click', () => {
     panelOptions?.classList.add('menu-panel-hidden');
     panelMain?.classList.remove('menu-panel-hidden');
+    if (menuPanelLabel) menuPanelLabel.textContent = isPaused ? 'Pause menu' : 'Begin a new run';
+    window.setTimeout(() => btnOptions?.focus(), 50);
   });
 
   btnToggleSound?.addEventListener('click', () => {
-    const muted = audioManager.toggleMute();
-    if (btnToggleSound) {
-      btnToggleSound.textContent = muted ? 'Sound: Off' : 'Sound: On';
-    }
+    audioManager.toggleMute();
+    updateSoundSetting();
   });
 
   btnPlay?.addEventListener('click', () => {
@@ -105,75 +178,56 @@ function setupMainMenu(onPlay: () => void, onResume: () => void) {
     onPlay();
   });
 
-  btnResume?.addEventListener('click', () => {
-    isPaused = false;
-    hideMenu();
-    onResume();
-  });
+  btnResume?.addEventListener('click', resumeGame);
+  btnPause?.addEventListener('click', pauseGame);
 
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && gameStarted) {
       if (isPaused) {
-        isPaused = false;
-        hideMenu();
-        onResume();
+        resumeGame();
       } else {
-        isPaused = true;
-        activeSession?.pause();
-        showMenu('pause');
+        pauseGame();
       }
     }
   });
-}
 
-// ---------- Simple buff indicator UI (built dynamically, no HTML/CSS file edits needed) ----------
-let buffIndicatorEl: HTMLDivElement | null = null;
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Tab') return;
 
-function ensureBuffIndicator(): HTMLDivElement {
-  if (buffIndicatorEl) return buffIndicatorEl;
+    const gameOver = document.getElementById('game-over');
+    const mainMenu = document.getElementById('main-menu');
+    const activeDialog = gameOver && !gameOver.classList.contains('overlay-hidden') ? gameOver : mainMenu;
 
-  const el = document.createElement('div');
-  el.id = 'buff-indicator';
-  el.style.position = 'fixed';
-  el.style.bottom = '90px';
-  el.style.left = '20px';
-  el.style.display = 'flex';
-  el.style.flexDirection = 'column';
-  el.style.gap = '6px';
-  el.style.zIndex = '20';
-  el.style.pointerEvents = 'none';
-  document.body.appendChild(el);
-  buffIndicatorEl = el;
-  return el;
-}
+    if (!activeDialog || activeDialog.inert || activeDialog.classList.contains('hidden')) return;
 
-function renderBuffIndicator(speedSecondsLeft: number, multiplierSecondsLeft: number) {
-  const el = ensureBuffIndicator();
-  const parts: string[] = [];
+    const focusable = Array.from(
+      activeDialog.querySelectorAll<HTMLElement>('button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])')
+    ).filter((element) => element.getClientRects().length > 0);
 
-  if (speedSecondsLeft > 0) {
-    parts.push(
-      `<div style="background:rgba(255,204,51,0.85);color:#1a1a1a;padding:4px 10px;border-radius:6px;font-size:13px;font-weight:600;font-family:sans-serif;">⚡ Speed x1.6 — ${speedSecondsLeft.toFixed(1)}s</div>`
-    );
-  }
+    if (focusable.length === 0) return;
 
-  if (multiplierSecondsLeft > 0) {
-    parts.push(
-      `<div style="background:rgba(255,68,170,0.85);color:#fff;padding:4px 10px;border-radius:6px;font-size:13px;font-weight:600;font-family:sans-serif;">✦ Score x2 — ${multiplierSecondsLeft.toFixed(1)}s</div>`
-    );
-  }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const activeElement = document.activeElement;
 
-  el.innerHTML = parts.join('');
+    if (event.shiftKey && (activeElement === first || !activeDialog.contains(activeElement))) {
+      event.preventDefault();
+      last?.focus();
+    } else if (!event.shiftKey && (activeElement === last || !activeDialog.contains(activeElement))) {
+      event.preventDefault();
+      first?.focus();
+    }
+  });
+
+  updateSoundSetting();
 }
 
 async function start() {
-  const assets = await preloadAssets();
+  document.getElementById('btn-retry-load')?.addEventListener('click', () => window.location.reload());
+  updateMenuBestScore(Number(localStorage.getItem(BEST_SCORE_KEY) ?? 0));
+  setupTouchControls();
 
-  const loadingScreen = document.getElementById('loading-screen');
-  loadingScreen?.classList.add('hidden');
-  setTimeout(() => {
-    if (loadingScreen) loadingScreen.style.display = 'none';
-  }, 700);
+  const assets = await preloadAssets(updateLoadingProgress);
 
   setupMainMenu(
     () => {
@@ -183,10 +237,29 @@ async function start() {
     () => activeSession?.resume()
   );
 
+  showMenu('start');
+
+  const loadingScreen = document.getElementById('loading-screen');
+  loadingScreen?.setAttribute('aria-busy', 'false');
+  loadingScreen?.classList.add('hidden');
+  window.setTimeout(() => {
+    if (loadingScreen) loadingScreen.style.display = 'none';
+  }, 850);
+
   document.getElementById('btn-play-again')?.addEventListener('click', () => {
     hideGameOver();
     activeSession?.destroy();
     activeSession = beginGame(assets);
+  });
+
+  document.getElementById('btn-return-menu')?.addEventListener('click', () => {
+    hideGameOver();
+    activeSession?.destroy();
+    activeSession = null;
+    gameStarted = false;
+    isPaused = false;
+    document.body.classList.remove('game-active');
+    showMenu('start');
   });
 
   document.addEventListener('visibilitychange', () => {
@@ -202,6 +275,12 @@ function beginGame(assets: GameAssets): GameSession {
   gameStarted = true;
   isPaused = false;
   hideGameOver();
+  document.body.classList.add('game-active');
+  const gameHud = document.getElementById('game-hud');
+  if (gameHud) {
+    gameHud.inert = false;
+    gameHud.setAttribute('aria-hidden', 'false');
+  }
   input.reset();
 
   const { scene, camera, renderer, dispose: disposeScene } = createScene();
@@ -257,12 +336,14 @@ function beginGame(assets: GameAssets): GameSession {
   let animalsEaten = 0;
   let distanceTraveled = 0;
   let bestScore = Number(localStorage.getItem(BEST_SCORE_KEY) ?? 0);
+  let achievedNewBest = false;
 
   let scoreMultiplier = 1;
   let scoreMultiplierTimer = 0;
 
   updateScoreDisplay(score);
   updateHealthDisplay(health, MAX_HEALTH);
+  updateStaminaBar(1);
   updateStatsDisplay(distanceTraveled, animalsEaten, bestScore);
 
   const clock = new THREE.Clock();
@@ -276,8 +357,15 @@ function beginGame(assets: GameAssets): GameSession {
     ended = true;
     gameStarted = false;
     input.reset();
-    renderBuffIndicator(0, 0);
-    showGameOver(score, bestScore, elapsedTime);
+    updateBuffDisplay(0, 0);
+    showGameOver({
+      score,
+      best: bestScore,
+      elapsedSeconds: elapsedTime,
+      distance: distanceTraveled,
+      eaten: animalsEaten,
+      newBest: achievedNewBest,
+    });
   };
 
   function animate() {
@@ -330,7 +418,7 @@ function beginGame(assets: GameAssets): GameSession {
       }
     }
 
-    renderBuffIndicator(snake.speedBoostSecondsRemaining, scoreMultiplierTimer);
+    updateBuffDisplay(snake.speedBoostSecondsRemaining, scoreMultiplierTimer);
 
     distanceTraveled += previousHeadPosition.distanceTo(snake.head.position);
     previousHeadPosition.copy(snake.head.position);
@@ -356,6 +444,7 @@ function beginGame(assets: GameAssets): GameSession {
 
       if (score > bestScore) {
         bestScore = score;
+        achievedNewBest = true;
         localStorage.setItem(BEST_SCORE_KEY, String(bestScore));
       }
     }
@@ -369,6 +458,7 @@ function beginGame(assets: GameAssets): GameSession {
 
       updateScoreDisplay(score);
       updateHealthDisplay(health, MAX_HEALTH);
+      triggerDamageFeedback();
       spawnScorePopup(-damage);
       triggerShake(0.35);
 
@@ -405,10 +495,13 @@ function beginGame(assets: GameAssets): GameSession {
       deerManager.dispose();
       wolfManager.dispose();
       input.reset();
-      renderBuffIndicator(0, 0);
+      updateBuffDisplay(0, 0);
       disposeScene();
     },
   };
 }
 
-start();
+void start().catch((error) => {
+  console.error('Wild Roads failed to initialize:', error);
+  showLoadingError();
+});
