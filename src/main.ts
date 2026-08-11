@@ -2,7 +2,7 @@ import './style.css';
 import * as THREE from 'three';
 import { injectSpeedInsights } from '@vercel/speed-insights';
 import { createScene } from './world/scene';
-import { DayNightCycle } from './world/lighting';
+import { DayNightCycle, getAtmosphereDebugOptions } from './world/lighting';
 import { SkyObjects } from './world/sky';
 import { Snake } from './player/snake';
 import { updateCameraFollow } from './world/cameraFollow';
@@ -284,13 +284,13 @@ function beginGame(assets: GameAssets): GameSession {
   input.reset();
 
   const { scene, camera, renderer, dispose: disposeScene } = createScene();
-  renderer.shadowMap.enabled = true;
 
-  const dayNightCycle = new DayNightCycle(scene);
+  const dayNightCycle = new DayNightCycle(scene, renderer, getAtmosphereDebugOptions());
   const skyObjects = new SkyObjects(scene);
 
   const snake = new Snake();
   snake.addToScene(scene);
+  skyObjects.update(0, dayNightCycle.currentFrame, snake.head.position);
   setupTouchControls();
 
   const chunkManager = new ChunkManager(scene, assets);
@@ -382,8 +382,8 @@ function beginGame(assets: GameAssets): GameSession {
 
     updateFpsCounter();
 
-    dayNightCycle.update(delta);
-    skyObjects.update(delta, dayNightCycle.sunAngle, dayNightCycle.sunHeightFactor, snake.head.position);
+    const atmosphere = dayNightCycle.update(delta, snake.head.position);
+    skyObjects.update(delta, atmosphere, snake.head.position);
 
     const rockColliders = chunkManager.getRockColliders();
     snake.update(delta, rockColliders);
@@ -494,6 +494,8 @@ function beginGame(assets: GameAssets): GameSession {
       cancelAnimationFrame(animationFrameId);
       deerManager.dispose();
       wolfManager.dispose();
+      skyObjects.dispose();
+      dayNightCycle.dispose();
       input.reset();
       updateBuffDisplay(0, 0);
       disposeScene();
