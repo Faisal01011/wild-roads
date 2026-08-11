@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { input } from '../utils/input';
-import { getTerrainHeight, resolveRockCollisions } from '../world/chunk';
-import type { RockCollider } from '../world/chunk';
+import { getTerrainHeight, resolveTerrainCollisions } from '../world/chunk';
+import type { TerrainCollider } from '../world/chunk';
 
 const FORWARD_SPEED = 5;
 const BOOST_SPEED = 9;
@@ -162,6 +162,20 @@ export class Snake {
     return this.speedBoostTimer;
   }
 
+  setStartPosition(worldX: number, worldZ: number) {
+    const terrainHeight = getTerrainHeight(worldX, worldZ);
+    this.head.position.set(worldX, terrainHeight + HEAD_GROUND_OFFSET, worldZ);
+    this.headShadow.position.set(worldX, terrainHeight + 0.02, worldZ);
+    this.positionHistory = [];
+
+    this.segments.forEach((segment, index) => {
+      segment.position.set(worldX, terrainHeight + SEGMENT_GROUND_OFFSET, worldZ - index * 0.02);
+    });
+    this.segmentShadows.forEach((shadow, index) => {
+      shadow.position.set(worldX, terrainHeight + 0.02, worldZ - index * 0.02);
+    });
+  }
+
   applySpeedBoost(durationSeconds: number, multiplier: number) {
     this.speedBoostMultiplier = multiplier;
     this.speedBoostTimer = durationSeconds;
@@ -182,7 +196,7 @@ export class Snake {
     }
   }
 
-  update(delta: number, rockColliders: RockCollider[]) {
+  update(delta: number, terrainColliders: TerrainCollider[]) {
     const turnInput = input.getTurnInput();
 
     const targetTurnVelocity = -turnInput * TURN_SPEED;
@@ -240,7 +254,7 @@ export class Snake {
 
     this.head.position.addScaledVector(forward, this.currentSpeed * delta);
 
-    resolveRockCollisions(this.head.position, rockColliders, HEAD_COLLISION_RADIUS);
+    resolveTerrainCollisions(this.head.position, terrainColliders, HEAD_COLLISION_RADIUS);
 
     const terrainHeight = getTerrainHeight(this.head.position.x, this.head.position.z);
     this.head.position.y = terrainHeight + HEAD_GROUND_OFFSET;

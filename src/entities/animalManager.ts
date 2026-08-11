@@ -11,6 +11,8 @@ export interface SpeciesConfig extends AnimalConfig {
   despawnRadius: number;
   eatDistance: number;
   points: number;
+  spawnClearRadius?: number;
+  isSpawnPositionClear?: (position: THREE.Vector3, radius: number) => boolean;
 }
 
 export interface AnimalManagerResult {
@@ -36,13 +38,29 @@ export class AnimalManager {
     this.loading = true;
 
     try {
-      const angle = Math.random() * Math.PI * 2;
-      const dist = this.config.spawnRadius * 0.3 + Math.random() * this.config.spawnRadius * 0.7;
-      const position = new THREE.Vector3(
-        nearPosition.x + Math.cos(angle) * dist,
-        this.config.groundOffset,
-        nearPosition.z + Math.sin(angle) * dist
-      );
+      let position: THREE.Vector3 | null = null;
+      const clearRadius = this.config.spawnClearRadius ?? 1;
+
+      for (let attempt = 0; attempt < 12; attempt++) {
+        const angle = Math.random() * Math.PI * 2;
+        const dist = this.config.spawnRadius * 0.3 + Math.random() * this.config.spawnRadius * 0.7;
+        const candidate = new THREE.Vector3(
+          nearPosition.x + Math.cos(angle) * dist,
+          this.config.groundOffset,
+          nearPosition.z + Math.sin(angle) * dist
+        );
+
+        if (
+          this.config.isSpawnPositionClear &&
+          !this.config.isSpawnPositionClear(candidate, clearRadius)
+        ) {
+          continue;
+        }
+        position = candidate;
+        break;
+      }
+
+      if (!position) return;
 
       const model = await loadModel(this.config.modelPath, this.config.scaleCorrection, false, false, true);
 
