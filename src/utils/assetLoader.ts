@@ -136,23 +136,52 @@ export interface GameAssets {
   grassVariants: THREE.Group[];
 }
 
-export async function preloadAssets(): Promise<GameAssets> {
+export interface AssetLoadProgress {
+  loaded: number;
+  total: number;
+  label: string;
+}
+
+interface PreloadDefinition {
+  path: string;
+  scale: number;
+  label: string;
+}
+
+const PRELOAD_DEFINITIONS: PreloadDefinition[] = [
+  { path: '/models/Tree1.fbx', scale: 0.0146, label: 'Finding old-growth trees' },
+  { path: '/models/Tree2.fbx', scale: 0.0141, label: 'Raising the forest canopy' },
+  { path: '/models/Tree3.fbx', scale: 0.0147, label: 'Planting the distant treeline' },
+  { path: '/models/Tree4.fbx', scale: 0.0131, label: 'Finishing the forest edge' },
+  { path: '/models/Bush1.fbx', scale: 0.0067, label: 'Shaping the undergrowth' },
+  { path: '/models/Bush2.fbx', scale: 0.0105, label: 'Filling woodland clearings' },
+  { path: '/models/Bush3.fbx', scale: 0.008, label: 'Scattering wild shrubs' },
+  { path: '/models/Rock1.fbx', scale: 0.008, label: 'Laying weathered stone' },
+  { path: '/models/Rock2.fbx', scale: 0.0112, label: 'Marking the old trail' },
+  { path: '/models/Rock3.fbx', scale: 0.0057, label: 'Finishing rocky outcrops' },
+  { path: '/models/Grass_Large.fbx', scale: 0.0103, label: 'Growing meadow grass' },
+  { path: '/models/Grass_Large_Extruded.fbx', scale: 0.0108, label: 'Letting the grass move' },
+  { path: '/models/Grass_Small.fbx', scale: 0.0089, label: 'Opening the trail' },
+];
+
+export async function preloadAssets(
+  onProgress?: (progress: AssetLoadProgress) => void
+): Promise<GameAssets> {
+  let loaded = 0;
+  const total = PRELOAD_DEFINITIONS.length;
+  onProgress?.({ loaded, total, label: 'Preparing the wilderness' });
+
+  const models = await Promise.all(
+    PRELOAD_DEFINITIONS.map(async ({ path, scale, label }) => {
+      const model = await loadModel(path, scale, true, false);
+      loaded += 1;
+      onProgress?.({ loaded, total, label });
+      return model;
+    })
+  );
+
   const [tree1, tree2, tree3, tree4, bush1, bush2, bush3, rock1, rock2, rock3, grassLarge, grassLargeExtruded, grassSmall] =
-    await Promise.all([
-      loadModel('/models/Tree1.fbx', 0.0146, true, false),
-      loadModel('/models/Tree2.fbx', 0.0141, true, false),
-      loadModel('/models/Tree3.fbx', 0.0147, true, false),
-      loadModel('/models/Tree4.fbx', 0.0131, true, false),
-      loadModel('/models/Bush1.fbx', 0.0067, true, false),
-      loadModel('/models/Bush2.fbx', 0.0105, true, false),
-      loadModel('/models/Bush3.fbx', 0.0080, true, false),
-      loadModel('/models/Rock1.fbx', 0.0080, true, false),
-      loadModel('/models/Rock2.fbx', 0.0112, true, false),
-      loadModel('/models/Rock3.fbx', 0.0057, true, false),
-      loadModel('/models/Grass_Large.fbx', 0.0103, true, false),
-      loadModel('/models/Grass_Large_Extruded.fbx', 0.0108, true, false),
-      loadModel('/models/Grass_Small.fbx', 0.0089, true, false),
-    ]);
+    models;
 
   return {
     trees: [tree1, tree2, tree3, tree4],
