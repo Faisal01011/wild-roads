@@ -4,6 +4,7 @@ import {
   scatterDecorations,
   scatterCollectibles,
   animateCollectibles,
+  updateGrassWind,
   CHUNK_SIZE,
 } from './chunk';
 import type { ChunkAssets, TerrainCollider, CollectibleData } from './chunk';
@@ -131,6 +132,7 @@ export class ChunkManager {
   }
 
   updateWind(elapsedTime: number) {
+    updateGrassWind(elapsedTime);
     for (const decorations of this.loadedDecorations.values()) {
       for (const instance of decorations.children) {
         if (instance.userData.sway) {
