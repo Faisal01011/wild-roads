@@ -12,6 +12,9 @@ import { CameraFollowRig } from './world/cameraFollow';
 import { ChunkManager } from './world/chunkManager';
 import { updateGrassTrample } from './world/chunk';
 import { AnimalManager } from './entities/animalManager';
+import type { AnimalState } from './entities/animatedAnimal';
+import { WildlifeEffects } from './entities/wildlifeEffects';
+import type { WildlifeVariant } from './entities/wildlifeTypes';
 import {
   hideGameOver,
   showGameOver,
@@ -44,6 +47,7 @@ import {
   subscribeMotionPreference,
   toggleReducedMotionPreference,
 } from './utils/motionPreference';
+import { ThreatIndicatorController } from './utils/threatIndicators';
 
 // Initialize Vercel Speed Insights
 injectSpeedInsights();
@@ -52,6 +56,18 @@ const BEST_SCORE_KEY = 'wildroads_best_score';
 const MAX_HEALTH = 3;
 const DAMAGE_INVULNERABILITY_SECONDS = 1;
 const MAX_FRAME_DELTA = 0.05;
+
+const DEER_VARIANTS: readonly WildlifeVariant[] = [
+  { name: 'Chestnut', tint: 0x9b5a34, tintStrength: 0.16, scale: 0.96, accent: 0xe7b36f },
+  { name: 'Pale fallow', tint: 0xc5a276, tintStrength: 0.2, scale: 1.04, accent: 0xf1cf8a },
+  { name: 'Deep umber', tint: 0x533126, tintStrength: 0.18, scale: 1, accent: 0xcf8b5b },
+] as const;
+
+const WOLF_VARIANTS: readonly WildlifeVariant[] = [
+  { name: 'Slate hunter', tint: 0x53615c, tintStrength: 0.17, scale: 0.97, accent: 0xed955c },
+  { name: 'Russet hunter', tint: 0x704432, tintStrength: 0.2, scale: 1.05, accent: 0xf07a58 },
+  { name: 'Night hunter', tint: 0x242d2d, tintStrength: 0.24, scale: 1, accent: 0xff725d },
+] as const;
 
 function getBiomeDebugStart(): THREE.Vector2 | null {
   const params = new URLSearchParams(window.location.search);
@@ -71,6 +87,94 @@ function getPlayerDebugOptions() {
     longSnake: parameters.get('snake') === 'long',
     forceBoost: parameters.get('boost') === '1',
     showHit: parameters.get('hit') === '1',
+  };
+}
+
+interface WildlifeDebugOptions {
+  deerCount: number;
+  wolfCount: number;
+  deerOffsets?: readonly THREE.Vector2[];
+  wolfOffsets?: readonly THREE.Vector2[];
+  deerState?: AnimalState;
+  wolfState?: AnimalState;
+  lockDeerState: boolean;
+  lockWolfState: boolean;
+  disableCombatGrace: boolean;
+}
+
+function getWildlifeDebugOptions(): WildlifeDebugOptions {
+  const parameters = new URLSearchParams(window.location.search);
+  if (parameters.get('debug') !== '1') {
+    return {
+      deerCount: 12,
+      wolfCount: 3,
+      lockDeerState: false,
+      lockWolfState: false,
+      disableCombatGrace: false,
+    };
+  }
+
+  const wildlife = parameters.get('wildlife');
+  const combat = parameters.get('combat');
+  const combatState: Record<string, AnimalState> = {
+    alert: 'alert',
+    hunt: 'panic',
+    windup: 'windup',
+    strike: 'strike',
+    attack: 'windup',
+  };
+
+  if (combat && combatState[combat]) {
+    return {
+      deerCount: 0,
+      wolfCount: 1,
+      wolfOffsets: [new THREE.Vector2(combat === 'attack' ? 0.6 : 2.8, combat === 'attack' ? 2.4 : 6.2)],
+      wolfState: combatState[combat],
+      lockDeerState: false,
+      lockWolfState: combat !== 'attack',
+      disableCombatGrace: true,
+    };
+  }
+
+  if (wildlife === 'herd') {
+    return {
+      deerCount: 5,
+      wolfCount: 0,
+      deerOffsets: [
+        new THREE.Vector2(-4.2, 7.2),
+        new THREE.Vector2(-1.5, 9.4),
+        new THREE.Vector2(1.6, 8.3),
+        new THREE.Vector2(4.5, 10.2),
+        new THREE.Vector2(5.8, 6.6),
+      ],
+      lockDeerState: false,
+      lockWolfState: false,
+      disableCombatGrace: false,
+    };
+  }
+
+  if (wildlife === 'graze') {
+    return {
+      deerCount: 3,
+      wolfCount: 0,
+      deerOffsets: [
+        new THREE.Vector2(-4.5, 8.5),
+        new THREE.Vector2(0.5, 10.8),
+        new THREE.Vector2(5.2, 8.1),
+      ],
+      deerState: 'graze',
+      lockDeerState: true,
+      lockWolfState: false,
+      disableCombatGrace: false,
+    };
+  }
+
+  return {
+    deerCount: 12,
+    wolfCount: 3,
+    lockDeerState: false,
+    lockWolfState: false,
+    disableCombatGrace: false,
   };
 }
 
@@ -363,15 +467,20 @@ function beginGame(assets: GameAssets): GameSession {
   chunkManager.update(snake.head.position);
   const cameraRig = new CameraFollowRig(camera, reducedMotion);
   cameraRig.snapToSnake(snake, chunkManager.getTerrainColliders());
+  const wildlifeEffects = new WildlifeEffects(scene, reducedMotion);
+  const threatIndicators = new ThreatIndicatorController();
+  const wildlifeDebugOptions = getWildlifeDebugOptions();
 
   const deerManager = new AnimalManager(scene, {
+    species: 'deer',
     modelPath: '/models/Deer/Deer.gltf',
     scaleCorrection: 0.42,
-    count: 12,
+    count: wildlifeDebugOptions.deerCount,
     spawnRadius: 20,
     despawnRadius: 60,
     eatDistance: 1.5,
     points: 1,
+    variants: DEER_VARIANTS,
     wanderSpeed: 1.0,
     fleeSpeed: 4.5,
     fleeTriggerRadius: 7,
@@ -379,18 +488,24 @@ function beginGame(assets: GameAssets): GameSession {
     wanderAnimationPattern: /^walk$/i,
     fleeAnimationPattern: /^gallop$/i,
     spawnClearRadius: 1.1,
+    spawnExclusionRadius: 5.5,
+    debugSpawnOffsets: wildlifeDebugOptions.deerOffsets,
+    debugState: wildlifeDebugOptions.deerState,
+    debugLockState: wildlifeDebugOptions.lockDeerState,
     isSpawnPositionClear: (position, radius) =>
       chunkManager.isPositionClear(position.x, position.z, radius),
-  });
+  }, wildlifeEffects, reducedMotion);
 
   const wolfManager = new AnimalManager(scene, {
+    species: 'wolf',
     modelPath: '/models/Wolf/Wolf.gltf',
     scaleCorrection: 0.41,
-    count: 3,
+    count: wildlifeDebugOptions.wolfCount,
     spawnRadius: 50,
     despawnRadius: 65,
     eatDistance: 0, // unused for predators
     points: 0, // unused for predators
+    variants: WOLF_VARIANTS,
     wanderSpeed: 0.9,
     fleeSpeed: 5.5,
     fleeTriggerRadius: 9,
@@ -401,13 +516,21 @@ function beginGame(assets: GameAssets): GameSession {
     isPredator: true,
     catchDistance: 1.3,
     attackCooldownSeconds: 2.5,
+    attackWindupSeconds: 0.48,
+    attackStrikeSeconds: 0.42,
+    attackRecoverySeconds: 0.58,
     spawnClearRadius: 1.2,
+    spawnExclusionRadius: 16,
+    combatGraceSeconds: wildlifeDebugOptions.disableCombatGrace ? 0 : 5,
+    debugSpawnOffsets: wildlifeDebugOptions.wolfOffsets,
+    debugState: wildlifeDebugOptions.wolfState,
+    debugLockState: wildlifeDebugOptions.lockWolfState,
     isSpawnPositionClear: (position, radius) =>
       chunkManager.isPositionClear(position.x, position.z, radius),
-  });
+  }, wildlifeEffects, reducedMotion);
   let score = 0;
   let health = MAX_HEALTH;
-  let damageInvulnerabilityTimer = 0;
+  let damageInvulnerabilityTimer = playerDebugOptions.showHit ? 8 : 0;
   let animalsEaten = 0;
   let distanceTraveled = 0;
   let bestScore = Number(localStorage.getItem(BEST_SCORE_KEY) ?? 0);
@@ -420,6 +543,7 @@ function beginGame(assets: GameAssets): GameSession {
   updateHealthDisplay(health, MAX_HEALTH);
   updateStaminaBar(1);
   updateStatsDisplay(distanceTraveled, animalsEaten, bestScore);
+  threatIndicators.updateGuard(damageInvulnerabilityTimer, DAMAGE_INVULNERABILITY_SECONDS);
 
   const clock = new THREE.Clock();
   let elapsedTime = 0;
@@ -433,6 +557,7 @@ function beginGame(assets: GameAssets): GameSession {
     gameStarted = false;
     input.reset();
     updateBuffDisplay(0, 0);
+    threatIndicators.reset();
     showGameOver({
       score,
       best: bestScore,
@@ -501,22 +626,30 @@ function beginGame(assets: GameAssets): GameSession {
 
     const deerResult = deerManager.update(delta, snake.head.position);
     const wolfResult = wolfManager.update(delta, snake.head.position);
+    wildlifeEffects.update(delta);
+    threatIndicators.update(wolfResult.threats, camera);
 
     damageInvulnerabilityTimer = Math.max(0, damageInvulnerabilityTimer - delta);
+    threatIndicators.updateGuard(
+      damageInvulnerabilityTimer,
+      DAMAGE_INVULNERABILITY_SECONDS
+    );
 
-    if (deerResult.eatenPoints > 0) {
-      for (let i = 0; i < deerResult.eatenPoints; i++) {
-        snake.grow(scene);
+    if (deerResult.eaten.length > 0) {
+      let earnedPoints = 0;
+      for (const eaten of deerResult.eaten) {
+        earnedPoints += eaten.points;
+        for (let point = 0; point < eaten.points; point++) snake.grow(scene);
+        spawnEatBurst(scene, eaten.position);
       }
 
-      score += deerResult.eatenPoints * scoreMultiplier;
-      animalsEaten += 1;
+      score += earnedPoints * scoreMultiplier;
+      animalsEaten += deerResult.eaten.length;
 
       updateScoreDisplay(score);
-      spawnScorePopup(deerResult.eatenPoints * scoreMultiplier);
+      spawnScorePopup(earnedPoints * scoreMultiplier);
       audioManager.playEat();
       triggerShake(0.15);
-      spawnEatBurst(scene, snake.head.position);
 
       if (score > bestScore) {
         bestScore = score;
@@ -525,7 +658,8 @@ function beginGame(assets: GameAssets): GameSession {
       }
     }
 
-    if (wolfResult.attacks > 0 && damageInvulnerabilityTimer <= 0) {
+    if (wolfResult.attacks.length > 0 && damageInvulnerabilityTimer <= 0) {
+      const attacker = wolfResult.attacks[0];
       const damage = 1;
       health = Math.max(0, health - damage);
       damageInvulnerabilityTimer = DAMAGE_INVULNERABILITY_SECONDS;
@@ -536,6 +670,11 @@ function beginGame(assets: GameAssets): GameSession {
       updateScoreDisplay(score);
       updateHealthDisplay(health, MAX_HEALTH);
       triggerDamageFeedback();
+      threatIndicators.flashImpact(attacker.position, camera);
+      threatIndicators.updateGuard(
+        damageInvulnerabilityTimer,
+        DAMAGE_INVULNERABILITY_SECONDS
+      );
       spawnScorePopup(-damage);
       triggerShake(0.35);
 
@@ -569,6 +708,9 @@ function beginGame(assets: GameAssets): GameSession {
       if (destroyed) return;
       snake.setReducedMotion(reduced);
       cameraRig.setReducedMotion(reduced);
+      deerManager.setReducedMotion(reduced);
+      wolfManager.setReducedMotion(reduced);
+      wildlifeEffects.setReducedMotion(reduced);
     },
     destroy() {
       if (destroyed) return;
@@ -576,6 +718,8 @@ function beginGame(assets: GameAssets): GameSession {
       cancelAnimationFrame(animationFrameId);
       deerManager.dispose();
       wolfManager.dispose();
+      wildlifeEffects.dispose();
+      threatIndicators.reset();
       chunkManager.dispose();
       horizonLandmarks.dispose();
       skyObjects.dispose();
