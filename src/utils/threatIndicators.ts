@@ -38,6 +38,7 @@ export class ThreatIndicatorController {
   private readonly impactArrow: HTMLElement | null;
   private readonly projected = new THREE.Vector3();
   private readonly cameraSpace = new THREE.Vector3();
+  private readonly rankedThreats: WildlifeThreat[] = [];
   private lastAnnouncedLevel: WildlifeThreatLevel | null = null;
   private impactTimer = 0;
 
@@ -59,30 +60,30 @@ export class ThreatIndicatorController {
   }
 
   update(threats: readonly WildlifeThreat[], camera: THREE.PerspectiveCamera) {
-    const ranked = [...threats]
-      .sort((left, right) => {
-        const urgency = THREAT_PRIORITY[right.level] - THREAT_PRIORITY[left.level];
-        return urgency !== 0 ? urgency : left.distance - right.distance;
-      })
-      .slice(0, this.indicators.length);
+    this.rankedThreats.length = 0;
+    this.rankedThreats.push(...threats);
+    this.rankedThreats.sort((left, right) => {
+      const urgency = THREAT_PRIORITY[right.level] - THREAT_PRIORITY[left.level];
+      return urgency !== 0 ? urgency : left.distance - right.distance;
+    });
 
     for (let index = 0; index < this.indicators.length; index++) {
       const indicator = this.indicators[index];
-      const threat = ranked[index];
+      const threat = this.rankedThreats[index];
       if (!threat) {
         indicator.root.classList.remove('is-visible', 'is-aware', 'is-pursuit', 'is-windup', 'is-strike');
         continue;
       }
 
-      const direction = this.placeAtScreenEdge(threat.position, camera, indicator.root);
+      const angle = this.placeAtScreenEdge(threat.position, camera, indicator.root);
       indicator.root.classList.remove('is-aware', 'is-pursuit', 'is-windup', 'is-strike');
       indicator.root.classList.add('is-visible', `is-${threat.level}`);
-      indicator.arrow.style.transform = `rotate(${direction.angle + 90}deg)`;
+      indicator.arrow.style.transform = `rotate(${angle + 90}deg)`;
       indicator.label.textContent = THREAT_LABELS[threat.level];
       indicator.distance.textContent = `${Math.max(1, Math.round(threat.distance))}m`;
     }
 
-    const highestLevel = ranked[0]?.level ?? null;
+    const highestLevel = this.rankedThreats[0]?.level ?? null;
     if (highestLevel !== this.lastAnnouncedLevel) {
       if (this.announcer) {
         this.announcer.textContent = highestLevel
@@ -109,8 +110,8 @@ export class ThreatIndicatorController {
 
   flashImpact(position: THREE.Vector3, camera: THREE.PerspectiveCamera) {
     if (!this.impact || !this.impactArrow) return;
-    const direction = this.placeAtScreenEdge(position, camera, this.impact);
-    this.impactArrow.style.transform = `rotate(${direction.angle + 90}deg)`;
+    const angle = this.placeAtScreenEdge(position, camera, this.impact);
+    this.impactArrow.style.transform = `rotate(${angle + 90}deg)`;
     window.clearTimeout(this.impactTimer);
     this.impact.classList.remove('is-active');
     void this.impact.offsetWidth;
@@ -122,7 +123,7 @@ export class ThreatIndicatorController {
     worldPosition: THREE.Vector3,
     camera: THREE.PerspectiveCamera,
     element: HTMLElement
-  ): { angle: number } {
+  ): number {
     camera.updateMatrixWorld();
     this.cameraSpace.copy(worldPosition).applyMatrix4(camera.matrixWorldInverse);
     this.projected.copy(worldPosition).project(camera);
@@ -155,7 +156,7 @@ export class ThreatIndicatorController {
     const angle = Math.atan2(directionY, directionX) * THREE.MathUtils.RAD2DEG;
 
     element.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-50%, -50%)`;
-    return { angle };
+    return angle;
   }
 
   reset() {

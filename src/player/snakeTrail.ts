@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { QualityProfile } from '../utils/quality';
 
 const PARTICLE_COUNT = 96;
 const GOLD = new THREE.Color(0xf2c66d);
@@ -50,6 +51,7 @@ export class SnakeTrail {
   private velocities = new Float32Array(PARTICLE_COUNT * 3);
   private cursor = 0;
   private spawnBudget = 0;
+  private densityScale = 1;
 
   constructor() {
     this.geometry = new THREE.BufferGeometry();
@@ -74,6 +76,10 @@ export class SnakeTrail {
 
   addToScene(scene: THREE.Scene) {
     scene.add(this.points);
+  }
+
+  setQuality(profile: QualityProfile) {
+    this.densityScale = profile.particleDensity;
   }
 
   private spawn(
@@ -127,7 +133,8 @@ export class SnakeTrail {
       this.life.fill(0);
       this.spawnBudget = 0;
     } else {
-      const spawnRate = boostAmount * 34 + Math.max(0, turnAmount - 0.35) * 9;
+      const spawnRate = (boostAmount * 34 + Math.max(0, turnAmount - 0.35) * 9)
+        * this.densityScale;
       this.spawnBudget += spawnRate * delta;
       perpendicular.set(-forward.z, 0, forward.x);
 
@@ -157,8 +164,9 @@ export class SnakeTrail {
 
   spawnGrowthBurst(position: THREE.Vector3, reducedMotion: boolean) {
     if (reducedMotion) return;
-    for (let index = 0; index < 12; index++) {
-      const angle = (index / 12) * Math.PI * 2 + Math.random() * 0.2;
+    const count = Math.max(4, Math.round(12 * this.densityScale));
+    for (let index = 0; index < count; index++) {
+      const angle = (index / count) * Math.PI * 2 + Math.random() * 0.2;
       const speed = 0.35 + Math.random() * 0.55;
       this.spawn(
         position,
@@ -174,7 +182,8 @@ export class SnakeTrail {
 
   spawnHitBurst(position: THREE.Vector3, reducedMotion: boolean) {
     if (reducedMotion) return;
-    for (let index = 0; index < 10; index++) {
+    const count = Math.max(4, Math.round(10 * this.densityScale));
+    for (let index = 0; index < count; index++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = 0.55 + Math.random() * 0.75;
       this.spawn(

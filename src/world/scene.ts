@@ -1,10 +1,11 @@
 import * as THREE from 'three';
+import type { QualityProfile } from '../utils/quality';
 
 function isMobileDevice(): boolean {
   return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 768;
 }
 
-export function createScene() {
+export function createScene(initialQuality: QualityProfile) {
   const scene = new THREE.Scene();
   const initialSkyColor = new THREE.Color(0x6f94a4);
   scene.background = initialSkyColor;
@@ -25,12 +26,13 @@ export function createScene() {
   // atmospheric sprites overlap. Desktop keeps MSAA; mobile relies on the
   // capped pixel ratio and soft-edged source textures instead.
   const renderer = new THREE.WebGLRenderer({
-    antialias: !mobile,
+    antialias: !mobile && initialQuality.antialias,
     powerPreference: 'high-performance',
   });
 
+  let activePixelRatio = Math.min(window.devicePixelRatio, initialQuality.pixelRatioCap);
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setPixelRatio(activePixelRatio);
 
   // Keep authored colours consistent across browsers and compress bright
   // sunlight into a filmic range without washing out the forest palette.
@@ -40,6 +42,8 @@ export function createScene() {
 
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.autoUpdate = false;
+  renderer.shadowMap.needsUpdate = true;
 
   document.body.appendChild(renderer.domElement);
 
@@ -47,9 +51,14 @@ export function createScene() {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(activePixelRatio);
   };
   window.addEventListener('resize', handleResize);
+
+  const setPixelRatio = (pixelRatio: number) => {
+    activePixelRatio = pixelRatio;
+    renderer.setPixelRatio(activePixelRatio);
+  };
 
   const dispose = () => {
     window.removeEventListener('resize', handleResize);
@@ -58,5 +67,5 @@ export function createScene() {
     renderer.domElement.remove();
   };
 
-  return { scene, camera, renderer, dispose };
+  return { scene, camera, renderer, setPixelRatio, dispose };
 }

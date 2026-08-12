@@ -260,7 +260,7 @@
                   <path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M6 14v6" />
                 </svg>
               </span>
-              <span class="menu-button-copy"><strong>Settings</strong><small>Audio and preferences</small></span>
+              <span class="menu-button-copy"><strong>Settings</strong><small>Audio, graphics and accessibility</small></span>
               <span class="menu-button-arrow" aria-hidden="true">→</span>
             </button>
           </div>
@@ -295,6 +295,19 @@
               <span class="menu-button-copy"><strong>Motion effects</strong><small id="motion-setting-status">Full</small></span>
               <span class="toggle-track" aria-hidden="true"><span></span></span>
             </button>
+            <div class="quality-setting" aria-labelledby="quality-setting-label">
+              <div class="quality-setting-copy">
+                <span id="quality-setting-label">Graphics quality</span>
+                <small id="quality-setting-status" aria-live="polite">Auto · Medium</small>
+              </div>
+              <div class="quality-preset-group" role="radiogroup" aria-label="Graphics quality preset">
+                <button type="button" role="radio" data-quality-preset="auto" aria-checked="true">Auto</button>
+                <button type="button" role="radio" data-quality-preset="low" aria-checked="false">Low</button>
+                <button type="button" role="radio" data-quality-preset="medium" aria-checked="false">Medium</button>
+                <button type="button" role="radio" data-quality-preset="high" aria-checked="false">High</button>
+              </div>
+              <p>Auto balances clarity and frame rate while you play.</p>
+            </div>
             <button class="menu-button menu-button-quiet" id="btn-back" type="button">
               <span aria-hidden="true">←</span>
               Back to menu

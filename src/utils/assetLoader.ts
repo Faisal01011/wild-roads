@@ -1,12 +1,29 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
-import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
+import type { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import type { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 
-const gltfLoader = new GLTFLoader();
-const fbxLoader = new FBXLoader();
+let gltfLoaderPromise: Promise<GLTFLoader> | null = null;
+let fbxLoaderPromise: Promise<FBXLoader> | null = null;
 const cache: Map<string, THREE.Group> = new Map();
 const animationsCache: Map<string, THREE.AnimationClip[]> = new Map();
+
+function getGltfLoader(): Promise<GLTFLoader> {
+  gltfLoaderPromise ??= import('three/examples/jsm/loaders/GLTFLoader.js')
+    .then(({ GLTFLoader }) => new GLTFLoader());
+  return gltfLoaderPromise;
+}
+
+function getFbxLoader(): Promise<FBXLoader> {
+  fbxLoaderPromise ??= import('three/examples/jsm/loaders/FBXLoader.js')
+    .then(({ FBXLoader }) => new FBXLoader());
+  return fbxLoaderPromise;
+}
+
+async function cloneModel(scene: THREE.Group, keepAnimations: boolean): Promise<THREE.Group> {
+  if (!keepAnimations) return scene.clone(true);
+  const { clone } = await import('three/examples/jsm/utils/SkeletonUtils.js');
+  return clone(scene) as THREE.Group;
+}
 
 function isolateLargestChild(scene: THREE.Group): THREE.Group {
   if (scene.children.length <= 1) return scene;
@@ -75,52 +92,42 @@ export async function loadModel(
   keepAnimations = false
 ): Promise<THREE.Group> {
   if (cache.has(path)) {
-    return keepAnimations
-      ? (SkeletonUtils.clone(cache.get(path)!) as THREE.Group)
-      : cache.get(path)!.clone(true);
+    return cloneModel(cache.get(path)!, keepAnimations);
   }
 
   const isFbx = path.toLowerCase().endsWith('.fbx');
 
   return new Promise((resolve, reject) => {
     if (isFbx) {
-      fbxLoader.load(
+      void getFbxLoader().then((fbxLoader) => fbxLoader.load(
         path,
         (fbxScene) => {
           const result = processLoadedModel(fbxScene, scaleCorrection, recenter, isolateLargest);
           cache.set(path, result);
           animationsCache.set(path, fbxScene.animations ?? []);
-          resolve(
-            keepAnimations
-              ? (SkeletonUtils.clone(result) as THREE.Group)
-              : result.clone(true)
-          );
+          void cloneModel(result, keepAnimations).then(resolve, reject);
         },
         undefined,
         (error) => {
           console.error(`Failed to load FBX model: ${path}`, error);
           reject(error);
         }
-      );
+      ), reject);
     } else {
-      gltfLoader.load(
+      void getGltfLoader().then((gltfLoader) => gltfLoader.load(
         path,
         (gltf) => {
           const result = processLoadedModel(gltf.scene, scaleCorrection, recenter, isolateLargest);
           cache.set(path, result);
           animationsCache.set(path, gltf.animations ?? []);
-          resolve(
-            keepAnimations
-              ? (SkeletonUtils.clone(result) as THREE.Group)
-              : result.clone(true)
-          );
+          void cloneModel(result, keepAnimations).then(resolve, reject);
         },
         undefined,
         (error) => {
           console.error(`Failed to load GLTF model: ${path}`, error);
           reject(error);
         }
-      );
+      ), reject);
     }
   });
 }
@@ -133,7 +140,6 @@ export interface GameAssets {
   trees: THREE.Group[];
   bushes: THREE.Group[];
   rocks: THREE.Group[];
-  grassVariants: THREE.Group[];
 }
 
 export interface AssetLoadProgress {
@@ -159,9 +165,6 @@ const PRELOAD_DEFINITIONS: PreloadDefinition[] = [
   { path: '/models/Rock1.fbx', scale: 0.008, label: 'Laying weathered stone' },
   { path: '/models/Rock2.fbx', scale: 0.0112, label: 'Marking the old trail' },
   { path: '/models/Rock3.fbx', scale: 0.0057, label: 'Finishing rocky outcrops' },
-  { path: '/models/Grass_Large.fbx', scale: 0.0103, label: 'Growing meadow grass' },
-  { path: '/models/Grass_Large_Extruded.fbx', scale: 0.0108, label: 'Letting the grass move' },
-  { path: '/models/Grass_Small.fbx', scale: 0.0089, label: 'Opening the trail' },
 ];
 
 function createProceduralConifer(): THREE.Group {
@@ -215,13 +218,11 @@ export async function preloadAssets(
     })
   );
 
-  const [tree1, tree2, tree3, tree4, bush1, bush2, bush3, rock1, rock2, rock3, grassLarge, grassLargeExtruded, grassSmall] =
-    models;
+  const [tree1, tree2, tree3, tree4, bush1, bush2, bush3, rock1, rock2, rock3] = models;
 
   return {
     trees: [tree1, tree2, tree3, tree4, createProceduralConifer()],
     bushes: [bush1, bush2, bush3],
     rocks: [rock1, rock2, rock3],
-    grassVariants: [grassLarge, grassLargeExtruded, grassSmall],
   };
 }

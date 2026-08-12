@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { AtmosphereFrame } from './lighting';
+import type { QualityProfile } from '../utils/quality';
 
 const SKY_RADIUS = 420;
 const CELESTIAL_DISTANCE = 360;
@@ -205,6 +206,7 @@ export class SkyObjects {
   private readonly moonCore: THREE.Sprite;
   private readonly moonGlow: THREE.Sprite;
   private readonly clouds: CloudRecord[] = [];
+  private activeCloudCount = CLOUD_COUNT;
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
@@ -336,7 +338,8 @@ export class SkyObjects {
     moonCoreMaterial.opacity = atmosphere.moonVisibility * 0.92;
     moonGlowMaterial.opacity = atmosphere.moonVisibility * 0.32;
 
-    for (const cloud of this.clouds) {
+    for (let index = 0; index < this.activeCloudCount; index++) {
+      const cloud = this.clouds[index];
       cloud.sprite.position.x += cloud.speed * delta;
 
       const offsetX = cloud.sprite.position.x - playerPosition.x;
@@ -357,6 +360,14 @@ export class SkyObjects {
       material.color.copy(atmosphere.cloudColor);
       material.opacity = atmosphere.cloudOpacity * cloud.baseOpacity;
     }
+  }
+
+  setQuality(profile: QualityProfile) {
+    this.activeCloudCount = Math.max(3, Math.round(CLOUD_COUNT * profile.skyDensity));
+    this.clouds.forEach((cloud, index) => {
+      cloud.sprite.visible = index < this.activeCloudCount;
+    });
+    this.stars.geometry.setDrawRange(0, Math.max(140, Math.round(STAR_COUNT * profile.skyDensity)));
   }
 
   dispose() {

@@ -1,13 +1,18 @@
 import * as THREE from 'three';
 import { blendBiomeColor, createBiomeSample, sampleBiome } from './biomes';
 import { createSeededRandom } from './procedural';
+import type { QualityProfile } from '../utils/quality';
+
+const MOUNTAIN_COUNT = 18;
+const HILL_COUNT = 14;
+const FOREST_COUNT = 52;
 
 const random = createSeededRandom(0x686f7269);
 
 function createMountainInstances(material: THREE.Material): THREE.InstancedMesh {
   const geometry = new THREE.ConeGeometry(1, 1, 5, 1);
   geometry.translate(0, 0.5, 0);
-  const mesh = new THREE.InstancedMesh(geometry, material, 18);
+  const mesh = new THREE.InstancedMesh(geometry, material, MOUNTAIN_COUNT);
   const dummy = new THREE.Object3D();
 
   for (let index = 0; index < mesh.count; index++) {
@@ -30,7 +35,7 @@ function createMountainInstances(material: THREE.Material): THREE.InstancedMesh 
 
 function createHillInstances(material: THREE.Material): THREE.InstancedMesh {
   const geometry = new THREE.SphereGeometry(1, 12, 6);
-  const mesh = new THREE.InstancedMesh(geometry, material, 14);
+  const mesh = new THREE.InstancedMesh(geometry, material, HILL_COUNT);
   const dummy = new THREE.Object3D();
 
   for (let index = 0; index < mesh.count; index++) {
@@ -52,7 +57,7 @@ function createHillInstances(material: THREE.Material): THREE.InstancedMesh {
 function createForestInstances(material: THREE.Material): THREE.InstancedMesh {
   const geometry = new THREE.ConeGeometry(0.72, 2.8, 5, 1);
   geometry.translate(0, 1.4, 0);
-  const mesh = new THREE.InstancedMesh(geometry, material, 52);
+  const mesh = new THREE.InstancedMesh(geometry, material, FOREST_COUNT);
   const dummy = new THREE.Object3D();
 
   for (let index = 0; index < mesh.count; index++) {
@@ -118,6 +123,12 @@ export class HorizonLandmarks {
     this.hillMaterial.opacity = 0.58 + biome.weights.meadow * 0.2;
     this.forestMaterial.opacity =
       0.38 + (biome.weights.pine + biome.weights.autumn + biome.weights.moonlit) * 0.4;
+  }
+
+  setQuality(profile: QualityProfile) {
+    this.mountains.count = Math.max(9, Math.round(MOUNTAIN_COUNT * profile.horizonDensity));
+    this.hills.count = Math.max(7, Math.round(HILL_COUNT * profile.horizonDensity));
+    this.forest.count = Math.max(22, Math.round(FOREST_COUNT * profile.horizonDensity));
   }
 
   dispose() {
