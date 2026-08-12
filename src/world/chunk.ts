@@ -164,7 +164,7 @@ export interface ChunkDecorations {
 const TREE_CANDIDATES_PER_CHUNK = 14;
 const BUSH_CANDIDATES_PER_CHUNK = 12;
 const ROCK_CANDIDATES_PER_CHUNK = 10;
-const GRASS_GRID_SIZE = 23;
+const GRASS_GRID_SIZE = 58;
 const FLOWER_GRID_SIZE = 7;
 const SPAWN_CLEAR_RADIUS = 8;
 
@@ -278,36 +278,24 @@ function overlapsFootprint(x: number, z: number, radius: number, placed: PlacedF
   return placed.some((item) => Math.hypot(x - item.x, z - item.z) < radius + item.radius + 0.35);
 }
 
-function extractMesh(group: THREE.Group): THREE.Mesh | null {
-  group.updateMatrixWorld(true);
-
-  let found: THREE.Mesh | null = null;
-  let worldMatrix: THREE.Matrix4 | null = null;
-
-  group.traverse((child) => {
-    if (!found && child instanceof THREE.Mesh) {
-      found = child;
-      worldMatrix = child.matrixWorld.clone();
-    }
-  });
-
-  if (!found || !worldMatrix) return null;
-
-  const bakedGeometry = (found as THREE.Mesh).geometry.clone();
-  bakedGeometry.applyMatrix4(worldMatrix);
-
-  return new THREE.Mesh(bakedGeometry, (found as THREE.Mesh).material);
-}
-
-// ---------- Grass trample shader ----------
+// ---------- Dense procedural grass ----------
 const trampleUniforms = {
-  uTramplePos: { value: new THREE.Vector3(99999, 0, 99999) },
-  uTrampleRadius: { value: 2.2 },
-  uTrampleStrength: { value: 0.5 },
+  uTime: { value: 0 },
+  uTramplePoints: {
+    value: Array.from({ length: 6 }, () => new THREE.Vector3(99999, 0, 99999)),
+  },
+  uTrampleRadius: { value: 1.45 },
+  uTrampleStrength: { value: 0.72 },
 };
 
 export function updateGrassTrample(worldPosition: THREE.Vector3) {
-  trampleUniforms.uTramplePos.value.copy(worldPosition);
+  const points = trampleUniforms.uTramplePoints.value;
+  for (let index = points.length - 1; index > 0; index--) points[index].copy(points[index - 1]);
+  points[0].copy(worldPosition);
+}
+
+export function updateGrassWind(elapsedTime: number) {
+  trampleUniforms.uTime.value = elapsedTime;
 }
 
 interface GrassVariant {
@@ -316,36 +304,64 @@ interface GrassVariant {
   tipHeight: number;
 }
 
-const grassVariantCache = new Map<THREE.Group, GrassVariant>();
+let proceduralGrassVariant: GrassVariant | null = null;
 
-function getGrassVariant(template: THREE.Group): GrassVariant | null {
-  if (grassVariantCache.has(template)) {
-    return grassVariantCache.get(template)!;
+function getProceduralGrassVariant(): GrassVariant {
+  if (proceduralGrassVariant) return proceduralGrassVariant;
+
+  const geometry = new THREE.BufferGeometry();
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+  const segments = 4;
+  const bladeWidth = 0.085;
+
+  // Two crossed ribbons keep blades full from the chase camera without the
+  // cost of cylindrical geometry.
+  for (let ribbon = 0; ribbon < 2; ribbon++) {
+    const angle = ribbon * Math.PI * 0.5;
+    const sideX = Math.cos(angle) * bladeWidth;
+    const sideZ = Math.sin(angle) * bladeWidth;
+    const vertexOffset = positions.length / 3;
+    for (let segment = 0; segment <= segments; segment++) {
+      const t = segment / segments;
+      const taper = 1 - Math.pow(t, 1.7);
+      positions.push(-sideX * taper, t, -sideZ * taper, sideX * taper, t, sideZ * taper);
+      uvs.push(0, t, 1, t);
+      if (segment < segments) {
+        const row = vertexOffset + segment * 2;
+        indices.push(row, row + 1, row + 2, row + 1, row + 3, row + 2);
+      }
+    }
   }
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
 
-  const mesh = extractMesh(template);
-  if (!mesh) return null;
-
-  mesh.geometry.computeBoundingBox();
-  const tipHeight = mesh.geometry.boundingBox ? mesh.geometry.boundingBox.max.y : 1;
-
-  const material = (mesh.material as THREE.MeshStandardMaterial).clone();
+  const tipHeight = 1;
+  const material = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.9,
+    metalness: 0,
+    side: THREE.DoubleSide,
+    alphaTest: 0.18,
+  });
   material.color = new THREE.Color(0xffffff);
-  material.roughness = Math.max(0.78, material.roughness);
   material.onBeforeCompile = (shader) => {
-    shader.uniforms.uTramplePos = trampleUniforms.uTramplePos;
+    shader.uniforms.uTime = trampleUniforms.uTime;
+    shader.uniforms.uTramplePoints = trampleUniforms.uTramplePoints;
     shader.uniforms.uTrampleRadius = trampleUniforms.uTrampleRadius;
     shader.uniforms.uTrampleStrength = trampleUniforms.uTrampleStrength;
-    shader.uniforms.uGrassHeight = { value: tipHeight || 1 };
 
     shader.vertexShader = shader.vertexShader.replace(
       '#include <common>',
       `
       #include <common>
-      uniform vec3 uTramplePos;
+      uniform float uTime;
+      uniform vec3 uTramplePoints[6];
       uniform float uTrampleRadius;
       uniform float uTrampleStrength;
-      uniform float uGrassHeight;
       `
     );
 
@@ -354,37 +370,57 @@ function getGrassVariant(template: THREE.Group): GrassVariant | null {
       `
       #include <begin_vertex>
       #ifdef USE_INSTANCING
-        vec3 instanceWorldPos = (instanceMatrix * vec4(transformed, 1.0)).xyz;
-        float distToTrample = distance(instanceWorldPos.xz, uTramplePos.xz);
-        float bendAmount = smoothstep(uTrampleRadius, 0.0, distToTrample);
-        float heightFactor = clamp(transformed.y / max(uGrassHeight, 0.0001), 0.0, 1.0);
-        vec2 pushDir = normalize(instanceWorldPos.xz - uTramplePos.xz + 0.0001);
+        vec3 rootWorld = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+        float heightFactor = clamp(transformed.y, 0.0, 1.0);
+        float gust = sin(rootWorld.x * 0.19 + uTime * 1.7) * 0.55
+          + sin(rootWorld.z * 0.11 - uTime * 1.08) * 0.3
+          + sin((rootWorld.x + rootWorld.z) * 0.045 + uTime * 0.62) * 0.15;
+        transformed.x += gust * heightFactor * heightFactor * 0.24;
+        transformed.z += gust * heightFactor * heightFactor * 0.08;
+
+        float bendAmount = 0.0;
+        vec2 pushDir = vec2(0.0);
+        for (int i = 0; i < 6; i++) {
+          vec2 delta = rootWorld.xz - uTramplePoints[i].xz;
+          float distanceToTrail = length(delta);
+          float trail = smoothstep(uTrampleRadius, 0.0, distanceToTrail) * (1.0 - float(i) * 0.11);
+          if (trail > bendAmount) {
+            bendAmount = trail;
+            pushDir = normalize(delta + vec2(0.0001));
+          }
+        }
         transformed.xz += pushDir * bendAmount * heightFactor * uTrampleStrength;
-        transformed.y -= bendAmount * heightFactor * uTrampleStrength * 0.35;
+        transformed.y *= 1.0 - bendAmount * 0.58 * heightFactor;
       #endif
       `
     );
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <alphatest_fragment>',
+      `
+      #include <alphatest_fragment>
+      float grassDistanceFade = 1.0 - smoothstep(34.0, 52.0, length(vViewPosition));
+      float grassDither = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+      if (grassDither > grassDistanceFade) discard;
+      `
+    );
   };
+  material.customProgramCacheKey = () => 'wild-roads-procedural-grass-v2';
   material.needsUpdate = true;
 
-  const variant: GrassVariant = { geometry: mesh.geometry, material, tipHeight: tipHeight || 1 };
-  grassVariantCache.set(template, variant);
-  return variant;
+  proceduralGrassVariant = { geometry, material, tipHeight };
+  return proceduralGrassVariant;
 }
 
 function createGrassForChunk(
   chunkX: number,
   chunkZ: number,
-  grassTemplates: THREE.Group[],
+  _grassTemplates: THREE.Group[],
   placedFootprints: PlacedFootprint[]
 ): THREE.InstancedMesh[] {
   const worldOffsetX = chunkX * CHUNK_SIZE;
   const worldOffsetZ = chunkZ * CHUNK_SIZE;
 
-  const variants = grassTemplates
-    .map((t) => getGrassVariant(t))
-    .filter((v): v is GrassVariant => v !== null);
-  if (variants.length === 0) return [];
+  const variants = [getProceduralGrassVariant()];
 
   const matrixBuckets: THREE.Matrix4[][] = variants.map(() => []);
   const colorBuckets: THREE.Color[][] = variants.map(() => []);
@@ -427,13 +463,9 @@ function createGrassForChunk(
       if (overlapsFootprint(worldX, worldZ, 0.18, placedFootprints)) continue;
 
       const grassBiome = chooseBiome(biome, variantRoll);
-      const preferred = BIOMES[grassBiome].preferredGrass.filter((variant) => variant < variants.length);
-      const available = preferred.length > 0 ? preferred : variants.map((_, variant) => variant);
-      const variantIndex = available[
-        Math.min(available.length - 1, Math.floor(scaleRoll * available.length))
-      ];
-      const biomeScale = grassBiome === 'meadow' ? 1.08 : grassBiome === 'rocky' ? 0.78 : 0.94;
-      const scale = (0.78 + scaleRoll * 0.52) * biomeScale;
+      const variantIndex = 0;
+      const biomeScale = grassBiome === 'meadow' ? 0.92 : grassBiome === 'rocky' ? 0.58 : 0.78;
+      const scale = (0.62 + scaleRoll * 0.62) * biomeScale;
       const height = getTerrainHeight(worldX, worldZ);
 
       const matrix = new THREE.Matrix4();
@@ -461,6 +493,7 @@ function createGrassForChunk(
     instanced.name = `biome-grass-${chunkX}-${chunkZ}-${i}`;
     instanced.castShadow = false;
     instanced.receiveShadow = true;
+    instanced.frustumCulled = true;
 
     matrices.forEach((matrix, instanceIndex) => {
       instanced.setMatrixAt(instanceIndex, matrix);
