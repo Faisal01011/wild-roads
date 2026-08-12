@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { getTerrainHeight } from '../world/chunk';
 import type { WildlifeSpecies } from './wildlifeTypes';
+import type { QualityProfile } from '../utils/quality';
 
 interface FootprintParticle {
   mesh: THREE.Mesh<THREE.CircleGeometry, THREE.MeshBasicMaterial>;
@@ -63,6 +64,7 @@ export class WildlifeEffects {
   private footprintCursor = 0;
   private dustCursor = 0;
   private reducedMotion: boolean;
+  private particleDensity = 1;
 
   constructor(scene: THREE.Scene, reducedMotion: boolean) {
     this.scene = scene;
@@ -118,6 +120,10 @@ export class WildlifeEffects {
     }
   }
 
+  setQuality(profile: QualityProfile) {
+    this.particleDensity = profile.particleDensity;
+  }
+
   updateAnimal(
     id: number,
     position: THREE.Vector3,
@@ -155,11 +161,17 @@ export class WildlifeEffects {
 
     if (trail.distance >= stride) {
       trail.distance %= stride;
-      this.emitFootprint(position, rotationY, species, trail.side);
+      if (Math.random() <= Math.max(0.45, this.particleDensity)) {
+        this.emitFootprint(position, rotationY, species, trail.side);
+      }
       trail.side *= -1;
     }
 
-    if (!this.reducedMotion && speed > 3.2 && Math.random() < delta * Math.min(9, speed * 1.2)) {
+    if (
+      !this.reducedMotion
+      && speed > 3.2
+      && Math.random() < delta * Math.min(9, speed * 1.2) * this.particleDensity
+    ) {
       this.emitDust(position, rotationY, species, speed);
     }
   }
@@ -170,7 +182,7 @@ export class WildlifeEffects {
 
   burst(position: THREE.Vector3, accent: number, intensity = 1) {
     if (this.reducedMotion) return;
-    const count = Math.round(5 + intensity * 4);
+    const count = Math.max(2, Math.round((5 + intensity * 4) * this.particleDensity));
     for (let i = 0; i < count; i++) {
       const particle = this.claimDust();
       const angle = Math.random() * Math.PI * 2;

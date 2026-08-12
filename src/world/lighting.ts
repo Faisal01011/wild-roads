@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { QualityProfile } from '../utils/quality';
 
 interface AtmosphereKeyframe {
   time: number;
@@ -315,6 +316,8 @@ export class DayNightCycle {
     sunVisibility: 0,
     moonVisibility: 0,
   };
+  private shadowUpdateInterval = 1;
+  private shadowFrame = 0;
 
   constructor(
     scene: THREE.Scene,
@@ -359,7 +362,32 @@ export class DayNightCycle {
     }
 
     this.applyTimeOfDay(playerPosition);
+    this.shadowFrame++;
+    if (this.shadowFrame >= this.shadowUpdateInterval) {
+      this.shadowFrame = 0;
+      this.renderer.shadowMap.needsUpdate = true;
+    }
     return this.frame;
+  }
+
+  setQuality(profile: QualityProfile) {
+    this.shadowUpdateInterval = Math.max(1, profile.shadowUpdateInterval);
+    this.shadowFrame = 0;
+
+    const shadow = this.sun.shadow;
+    const mapSizeChanged = shadow.mapSize.x !== profile.shadowMapSize;
+    shadow.mapSize.set(profile.shadowMapSize, profile.shadowMapSize);
+    shadow.camera.left = -profile.shadowDistance;
+    shadow.camera.right = profile.shadowDistance;
+    shadow.camera.top = profile.shadowDistance;
+    shadow.camera.bottom = -profile.shadowDistance;
+    shadow.camera.updateProjectionMatrix();
+
+    if (mapSizeChanged && shadow.map) {
+      shadow.map.dispose();
+      shadow.map = null;
+    }
+    this.renderer.shadowMap.needsUpdate = true;
   }
 
   get currentFrame(): AtmosphereFrame {

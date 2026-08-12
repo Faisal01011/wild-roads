@@ -36,6 +36,7 @@ import { setupTouchControls } from './utils/touchControls';
 import {
   disposeBursts,
   setEffectsReducedMotion,
+  setEffectsQuality,
   spawnEatBurst,
   triggerShake,
   updateBursts,
@@ -48,6 +49,14 @@ import {
   toggleReducedMotionPreference,
 } from './utils/motionPreference';
 import { ThreatIndicatorController } from './utils/threatIndicators';
+import {
+  getInitialQualityProfile,
+  getQualityPreference,
+  RuntimeQualityController,
+  setQualityPreference,
+  subscribeQualityPreference,
+} from './utils/quality';
+import type { QualityPreference, QualityProfile, QualityTier } from './utils/quality';
 
 // Initialize Vercel Speed Insights
 injectSpeedInsights();
@@ -186,10 +195,40 @@ interface GameSession {
   pause: () => void;
   resume: () => void;
   setReducedMotion: (reduced: boolean) => void;
+  setQualityPreference: (preference: QualityPreference) => void;
   destroy: () => void;
 }
 
 let activeSession: GameSession | null = null;
+let effectiveQualityTier: QualityTier = getInitialQualityProfile().tier;
+
+function updateQualitySettingDisplay(
+  preference = getQualityPreference(),
+  tier = effectiveQualityTier
+) {
+  document.querySelectorAll<HTMLButtonElement>('[data-quality-preset]').forEach((button) => {
+    const selected = button.dataset.qualityPreset === preference;
+    button.setAttribute('aria-checked', String(selected));
+    button.classList.toggle('is-selected', selected);
+    button.tabIndex = selected ? 0 : -1;
+  });
+
+  const status = document.getElementById('quality-setting-status');
+  if (status) {
+    const tierLabel = tier.charAt(0).toUpperCase() + tier.slice(1);
+    status.textContent = preference === 'auto' ? `Auto · ${tierLabel}` : tierLabel;
+  }
+  document.body.dataset.quality = tier;
+}
+
+function applyQualityPreference(preference: QualityPreference) {
+  if (activeSession) {
+    activeSession.setQualityPreference(preference);
+  } else {
+    effectiveQualityTier = getInitialQualityProfile(preference).tier;
+  }
+  updateQualitySettingDisplay(preference, effectiveQualityTier);
+}
 
 function applyMotionPreference(reduced: boolean) {
   document.body.classList.toggle('reduce-motion', reduced);
@@ -284,6 +323,7 @@ function setupMainMenu(onPlay: () => void, onResume: () => void) {
   const btnPause = document.getElementById('btn-pause');
   const menuPanelLabel = document.getElementById('menu-panel-label');
   const soundSettingStatus = document.getElementById('sound-setting-status');
+  const qualityButtons = document.querySelectorAll<HTMLButtonElement>('[data-quality-preset]');
 
   const updateSoundSetting = () => {
     const muted = audioManager.isMuted();
@@ -309,6 +349,7 @@ function setupMainMenu(onPlay: () => void, onResume: () => void) {
     panelMain?.classList.add('menu-panel-hidden');
     panelOptions?.classList.remove('menu-panel-hidden');
     if (menuPanelLabel) menuPanelLabel.textContent = 'Settings';
+    updateQualitySettingDisplay();
     window.setTimeout(() => btnToggleSound?.focus(), 50);
   });
 
@@ -326,6 +367,27 @@ function setupMainMenu(onPlay: () => void, onResume: () => void) {
 
   btnToggleMotion?.addEventListener('click', () => {
     toggleReducedMotionPreference();
+  });
+
+  qualityButtons.forEach((button, index) => {
+    button.addEventListener('click', () => {
+      const preference = button.dataset.qualityPreset as QualityPreference | undefined;
+      if (preference) setQualityPreference(preference);
+    });
+    button.addEventListener('keydown', (event) => {
+      const direction = event.key === 'ArrowRight' || event.key === 'ArrowDown'
+        ? 1
+        : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+          ? -1
+          : 0;
+      if (direction === 0) return;
+      event.preventDefault();
+      const nextIndex = (index + direction + qualityButtons.length) % qualityButtons.length;
+      const nextButton = qualityButtons[nextIndex];
+      const preference = nextButton?.dataset.qualityPreset as QualityPreference | undefined;
+      nextButton?.focus();
+      if (preference) setQualityPreference(preference);
+    });
   });
 
   btnPlay?.addEventListener('click', () => {
@@ -376,13 +438,16 @@ function setupMainMenu(onPlay: () => void, onResume: () => void) {
   });
 
   updateSoundSetting();
+  updateQualitySettingDisplay();
 }
 
 async function start() {
   document.getElementById('btn-retry-load')?.addEventListener('click', () => window.location.reload());
   updateMenuBestScore(Number(localStorage.getItem(BEST_SCORE_KEY) ?? 0));
   subscribeMotionPreference(applyMotionPreference);
+  subscribeQualityPreference(applyQualityPreference);
   applyMotionPreference(getReducedMotion());
+  applyQualityPreference(getQualityPreference());
   setupTouchControls();
 
   const assets = await preloadAssets(updateLoadingProgress);
@@ -441,7 +506,15 @@ function beginGame(assets: GameAssets): GameSession {
   }
   input.reset();
 
-  const { scene, camera, renderer, dispose: disposeScene } = createScene();
+  const qualityPreference = getQualityPreference();
+  const initialQuality = getInitialQualityProfile(qualityPreference);
+  const {
+    scene,
+    camera,
+    renderer,
+    setPixelRatio,
+    dispose: disposeScene,
+  } = createScene(initialQuality);
 
   const dayNightCycle = new DayNightCycle(scene, renderer, getAtmosphereDebugOptions());
   const skyObjects = new SkyObjects(scene);
@@ -463,17 +536,18 @@ function beginGame(assets: GameAssets): GameSession {
   horizonLandmarks.update(snake.head.position);
   setupTouchControls();
 
-  const chunkManager = new ChunkManager(scene, assets);
+  const chunkManager = new ChunkManager(scene, assets, initialQuality);
   chunkManager.update(snake.head.position);
   const cameraRig = new CameraFollowRig(camera, reducedMotion);
   cameraRig.snapToSnake(snake, chunkManager.getTerrainColliders());
   const wildlifeEffects = new WildlifeEffects(scene, reducedMotion);
+  wildlifeEffects.setQuality(initialQuality);
   const threatIndicators = new ThreatIndicatorController();
   const wildlifeDebugOptions = getWildlifeDebugOptions();
 
   const deerManager = new AnimalManager(scene, {
     species: 'deer',
-    modelPath: '/models/Deer/Deer.gltf',
+    modelPath: '/models/Deer/Deer.glb',
     scaleCorrection: 0.42,
     count: wildlifeDebugOptions.deerCount,
     spawnRadius: 20,
@@ -494,11 +568,11 @@ function beginGame(assets: GameAssets): GameSession {
     debugLockState: wildlifeDebugOptions.lockDeerState,
     isSpawnPositionClear: (position, radius) =>
       chunkManager.isPositionClear(position.x, position.z, radius),
-  }, wildlifeEffects, reducedMotion);
+  }, wildlifeEffects, reducedMotion, initialQuality);
 
   const wolfManager = new AnimalManager(scene, {
     species: 'wolf',
-    modelPath: '/models/Wolf/Wolf.gltf',
+    modelPath: '/models/Wolf/Wolf.glb',
     scaleCorrection: 0.41,
     count: wildlifeDebugOptions.wolfCount,
     spawnRadius: 50,
@@ -527,7 +601,29 @@ function beginGame(assets: GameAssets): GameSession {
     debugLockState: wildlifeDebugOptions.lockWolfState,
     isSpawnPositionClear: (position, radius) =>
       chunkManager.isPositionClear(position.x, position.z, radius),
-  }, wildlifeEffects, reducedMotion);
+  }, wildlifeEffects, reducedMotion, initialQuality);
+
+  let currentQuality = initialQuality;
+  let selectedQualityPreference = qualityPreference;
+  const applyRuntimeQuality = (profile: QualityProfile) => {
+    currentQuality = profile;
+    effectiveQualityTier = profile.tier;
+    dayNightCycle.setQuality(profile);
+    skyObjects.setQuality(profile);
+    horizonLandmarks.setQuality(profile);
+    chunkManager.setQuality(profile, snake.head.position);
+    snake.setQuality(profile);
+    deerManager.setQuality(profile);
+    wolfManager.setQuality(profile);
+    wildlifeEffects.setQuality(profile);
+    setEffectsQuality(profile);
+    updateQualitySettingDisplay(selectedQualityPreference, profile.tier);
+  };
+  const qualityController = new RuntimeQualityController(qualityPreference, {
+    setPixelRatio,
+    onProfileChange: applyRuntimeQuality,
+  });
+
   let score = 0;
   let health = MAX_HEALTH;
   let damageInvulnerabilityTimer = playerDebugOptions.showHit ? 8 : 0;
@@ -551,6 +647,10 @@ function beginGame(assets: GameAssets): GameSession {
   let animationFrameId = 0;
   let destroyed = false;
   let ended = false;
+  let atmosphereAccumulator = 0;
+  let environmentAccumulator = 0;
+  let threatAccumulator = 1;
+  let hudAccumulator = 1;
 
   const finishRun = () => {
     ended = true;
@@ -577,26 +677,34 @@ function beginGame(assets: GameAssets): GameSession {
       return;
     }
 
-    const delta = Math.min(clock.getDelta(), MAX_FRAME_DELTA);
+    const rawDelta = clock.getDelta();
+    const delta = Math.min(rawDelta, MAX_FRAME_DELTA);
     elapsedTime += delta;
+    qualityController.update(rawDelta);
 
-    updateFpsCounter();
-
-    const atmosphere = dayNightCycle.update(delta, snake.head.position);
-    skyObjects.update(delta, atmosphere, snake.head.position);
-    horizonLandmarks.update(snake.head.position);
+    atmosphereAccumulator += delta;
+    const atmosphereInterval = 1 / currentQuality.atmosphereUpdateHz;
+    if (atmosphereAccumulator >= atmosphereInterval) {
+      const atmosphereDelta = atmosphereAccumulator;
+      atmosphereAccumulator = 0;
+      const atmosphere = dayNightCycle.update(atmosphereDelta, snake.head.position);
+      skyObjects.update(atmosphereDelta, atmosphere, snake.head.position);
+      horizonLandmarks.update(snake.head.position);
+    }
 
     chunkManager.update(snake.head.position);
     const terrainColliders = chunkManager.getTerrainColliders();
     snake.update(delta, terrainColliders);
     cameraRig.update(snake, delta, terrainColliders);
 
-    if (Math.floor(elapsedTime * 20) !== Math.floor((elapsedTime - delta) * 20)) {
+    environmentAccumulator += delta;
+    if (environmentAccumulator >= 1 / currentQuality.environmentUpdateHz) {
+      environmentAccumulator = 0;
       chunkManager.updateWind(elapsedTime);
+      chunkManager.updateCollectibleAnimations(elapsedTime);
     }
 
     updateGrassTrample(snake.head.position);
-    chunkManager.updateCollectibleAnimations(elapsedTime);
 
     const collected = chunkManager.checkCollectibleCollisions(snake.head.position);
     for (const item of collected) {
@@ -619,21 +727,19 @@ function beginGame(assets: GameAssets): GameSession {
       }
     }
 
-    updateBuffDisplay(snake.speedBoostSecondsRemaining, scoreMultiplierTimer);
-
     distanceTraveled += previousHeadPosition.distanceTo(snake.head.position);
     previousHeadPosition.copy(snake.head.position);
 
     const deerResult = deerManager.update(delta, snake.head.position);
     const wolfResult = wolfManager.update(delta, snake.head.position);
     wildlifeEffects.update(delta);
-    threatIndicators.update(wolfResult.threats, camera);
+    threatAccumulator += delta;
+    if (threatAccumulator >= 1 / currentQuality.threatUpdateHz) {
+      threatAccumulator = 0;
+      threatIndicators.update(wolfResult.threats, camera);
+    }
 
     damageInvulnerabilityTimer = Math.max(0, damageInvulnerabilityTimer - delta);
-    threatIndicators.updateGuard(
-      damageInvulnerabilityTimer,
-      DAMAGE_INVULNERABILITY_SECONDS
-    );
 
     if (deerResult.eaten.length > 0) {
       let earnedPoints = 0;
@@ -685,11 +791,21 @@ function beginGame(assets: GameAssets): GameSession {
       }
     }
 
-    updateBursts(scene, delta);
-    updateStaminaBar(snake.staminaPercent);
-    updateStatsDisplay(distanceTraveled, animalsEaten, bestScore);
+    updateBursts(delta);
+    hudAccumulator += delta;
+    if (hudAccumulator >= 1 / currentQuality.hudUpdateHz) {
+      hudAccumulator = 0;
+      updateBuffDisplay(snake.speedBoostSecondsRemaining, scoreMultiplierTimer);
+      updateStaminaBar(snake.staminaPercent);
+      updateStatsDisplay(distanceTraveled, animalsEaten, bestScore);
+      threatIndicators.updateGuard(
+        damageInvulnerabilityTimer,
+        DAMAGE_INVULNERABILITY_SECONDS
+      );
+    }
 
     renderer.render(scene, camera);
+    updateFpsCounter(qualityController.getSnapshot(), renderer);
   }
 
   animate();
@@ -712,10 +828,16 @@ function beginGame(assets: GameAssets): GameSession {
       wolfManager.setReducedMotion(reduced);
       wildlifeEffects.setReducedMotion(reduced);
     },
+    setQualityPreference(preference: QualityPreference) {
+      if (destroyed) return;
+      selectedQualityPreference = preference;
+      qualityController.setPreference(preference);
+    },
     destroy() {
       if (destroyed) return;
       destroyed = true;
       cancelAnimationFrame(animationFrameId);
+      qualityController.dispose();
       deerManager.dispose();
       wolfManager.dispose();
       wildlifeEffects.dispose();

@@ -1376,6 +1376,77 @@ body.is-touch-device #buff-indicator {
   transition: transform 0.25s var(--ease-out), background 0.25s ease;
 }
 
+.quality-setting {
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  padding: 13px 14px 12px;
+  background: var(--surface-faint);
+}
+
+.quality-setting-copy {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.quality-setting-copy > span {
+  color: var(--text-primary);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.quality-setting-copy small {
+  color: var(--sunlight-500);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.quality-preset-group {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 10px;
+  padding: 4px;
+  border-radius: 10px;
+  background: rgba(4, 14, 10, 0.48);
+}
+
+.quality-preset-group button {
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 7px 3px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.56rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.quality-preset-group button:hover {
+  color: var(--text-primary);
+}
+
+.quality-preset-group button.is-selected {
+  border-color: rgba(242, 198, 109, 0.28);
+  background: rgba(242, 198, 109, 0.14);
+  color: var(--sunlight-400);
+}
+
+.quality-setting > p {
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 0.6rem;
+  line-height: 1.45;
+}
+
 .control-guide {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -1667,6 +1738,8 @@ body.menu-is-pause .menu-story .brand-lockup {
   background: rgba(4, 14, 10, 0.82);
   color: var(--moss-400);
   font: 700 0.68rem/1.2 ui-monospace, monospace;
+  text-align: right;
+  white-space: pre-line;
   pointer-events: none;
 }
 

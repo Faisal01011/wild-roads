@@ -3,6 +3,7 @@ import { input } from '../utils/input';
 import { getTerrainHeight, resolveTerrainCollisions } from '../world/chunk';
 import type { TerrainCollider } from '../world/chunk';
 import { SnakeTrail } from './snakeTrail';
+import type { QualityProfile } from '../utils/quality';
 
 const FORWARD_SPEED = 5;
 const BOOST_SPEED = 9;
@@ -152,6 +153,7 @@ export class Snake {
   private hitTimer = 0;
   private hitDuration = 0;
   private reducedMotion: boolean;
+  private playerShadowsEnabled = true;
 
   private scaleTexture = createScaleTexture();
   private shadowTexture = createBlobShadowTexture();
@@ -284,7 +286,7 @@ export class Snake {
 
   private addSegment(instant: boolean): SegmentState {
     const mesh = new THREE.Mesh(this.segmentGeometry, this.bodyMaterial);
-    mesh.castShadow = true;
+    mesh.castShadow = this.playerShadowsEnabled;
     mesh.receiveShadow = true;
     mesh.position.copy(this.head.position);
 
@@ -349,6 +351,21 @@ export class Snake {
   setReducedMotion(reduced: boolean) {
     this.reducedMotion = reduced;
     if (reduced) this.trail.clear();
+  }
+
+  setQuality(profile: QualityProfile) {
+    this.playerShadowsEnabled = profile.playerShadows;
+    this.trail.setQuality(profile);
+    this.head.traverse((child) => {
+      if (!(child instanceof THREE.Mesh)) return;
+      if (child.userData.authoredCastShadow === undefined) {
+        child.userData.authoredCastShadow = child.castShadow;
+      }
+      child.castShadow = profile.playerShadows && Boolean(child.userData.authoredCastShadow);
+    });
+    for (const segment of this.segments) {
+      segment.mesh.castShadow = profile.playerShadows;
+    }
   }
 
   setStartPosition(worldX: number, worldZ: number) {

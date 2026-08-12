@@ -12,6 +12,7 @@ import {
 import type { BiomeId, TrailSample } from './biomes';
 import { coordinateRandom, smoothstep } from './procedural';
 import { getTerrainHeight, getTerrainSlope, getTerrainSurfaceVariation } from './terrain';
+import type { QualityProfile } from '../utils/quality';
 
 export const CHUNK_SIZE = 50;
 const SEGMENTS = 32;
@@ -145,7 +146,6 @@ export interface ChunkAssets {
   trees: THREE.Group[];
   bushes: THREE.Group[];
   rocks: THREE.Group[];
-  grassVariants: THREE.Group[];
 }
 
 export interface TerrainCollider {
@@ -183,8 +183,58 @@ interface PlacedFootprint {
   radius: number;
 }
 
+interface VegetationPlacement {
+  x: number;
+  y: number;
+  z: number;
+  rotationY: number;
+  scale: number;
+  swayPhase: number;
+  swaySpeed: number;
+  swayAmount: number;
+}
+
+interface VegetationBucket {
+  template: THREE.Group;
+  kind: DecorationKind;
+  placements: VegetationPlacement[];
+}
+
+interface TemplateMeshPart {
+  geometry: THREE.BufferGeometry;
+  material: THREE.Material | THREE.Material[];
+  localMatrix: THREE.Matrix4;
+}
+
+interface VegetationSwayData {
+  positions: Float32Array;
+  rotations: Float32Array;
+  scales: Float32Array;
+  phases: Float32Array;
+  speeds: Float32Array;
+  amounts: Float32Array;
+  partMatrix: THREE.Matrix4;
+}
+
 const metricsCache = new WeakMap<THREE.Object3D, ObjectMetrics>();
 const styledTemplateCache = new WeakMap<THREE.Group, Map<string, THREE.Group>>();
+const templateMeshPartsCache = new WeakMap<THREE.Group, TemplateMeshPart[]>();
+const vegetationPosition = new THREE.Vector3();
+const vegetationScale = new THREE.Vector3();
+const vegetationQuaternion = new THREE.Quaternion();
+const vegetationEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+const vegetationRootMatrix = new THREE.Matrix4();
+const vegetationFinalMatrix = new THREE.Matrix4();
+const vegetationPlacementScratch: VegetationPlacement = {
+  x: 0,
+  y: 0,
+  z: 0,
+  rotationY: 0,
+  scale: 1,
+  swayPhase: 0,
+  swaySpeed: 0,
+  swayAmount: 0,
+};
 
 function getGroundOffset(object: THREE.Object3D): number {
   return getObjectMetrics(object).groundOffset;
@@ -280,6 +330,122 @@ function overlapsFootprint(x: number, z: number, radius: number, placed: PlacedF
   return placed.some((item) => Math.hypot(x - item.x, z - item.z) < radius + item.radius + 0.35);
 }
 
+function getTemplateMeshParts(template: THREE.Group): TemplateMeshPart[] {
+  const cached = templateMeshPartsCache.get(template);
+  if (cached) return cached;
+
+  template.updateMatrixWorld(true);
+  const inverseRoot = template.matrixWorld.clone().invert();
+  const parts: TemplateMeshPart[] = [];
+  template.traverse((child) => {
+    if (!(child instanceof THREE.Mesh) || child instanceof THREE.SkinnedMesh) return;
+    parts.push({
+      geometry: child.geometry,
+      material: child.material,
+      localMatrix: new THREE.Matrix4().multiplyMatrices(inverseRoot, child.matrixWorld),
+    });
+  });
+  templateMeshPartsCache.set(template, parts);
+  return parts;
+}
+
+function writeVegetationMatrix(
+  mesh: THREE.InstancedMesh,
+  index: number,
+  placement: VegetationPlacement,
+  partMatrix: THREE.Matrix4,
+  elapsedTime = 0
+) {
+  const swayZ = Math.sin(elapsedTime * placement.swaySpeed + placement.swayPhase) * placement.swayAmount;
+  const swayX = Math.cos(elapsedTime * placement.swaySpeed * 0.7 + placement.swayPhase)
+    * placement.swayAmount * 0.5;
+  vegetationPosition.set(placement.x, placement.y, placement.z);
+  vegetationScale.setScalar(placement.scale);
+  vegetationEuler.set(swayX, placement.rotationY, swayZ);
+  vegetationQuaternion.setFromEuler(vegetationEuler);
+  vegetationRootMatrix.compose(vegetationPosition, vegetationQuaternion, vegetationScale);
+  vegetationFinalMatrix.multiplyMatrices(vegetationRootMatrix, partMatrix);
+  mesh.setMatrixAt(index, vegetationFinalMatrix);
+}
+
+function createInstancedVegetation(
+  group: THREE.Group,
+  buckets: Map<THREE.Group, VegetationBucket>,
+  chunkX: number,
+  chunkZ: number
+) {
+  for (const bucket of buckets.values()) {
+    const parts = getTemplateMeshParts(bucket.template);
+    parts.forEach((part, partIndex) => {
+      const mesh = new THREE.InstancedMesh(
+        part.geometry,
+        part.material,
+        bucket.placements.length
+      );
+      mesh.name = `${bucket.kind}-instances-${chunkX}-${chunkZ}-${partIndex}`;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.userData.qualityKind = bucket.kind;
+      mesh.userData.maximumCount = bucket.placements.length;
+
+      const hasSway = bucket.placements.some((placement) => placement.swayAmount > 0);
+      for (let index = 0; index < bucket.placements.length; index++) {
+        writeVegetationMatrix(mesh, index, bucket.placements[index], part.localMatrix);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+      if (hasSway) {
+        mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        const count = bucket.placements.length;
+        const swayData: VegetationSwayData = {
+          positions: new Float32Array(count * 3),
+          rotations: new Float32Array(count),
+          scales: new Float32Array(count),
+          phases: new Float32Array(count),
+          speeds: new Float32Array(count),
+          amounts: new Float32Array(count),
+          partMatrix: part.localMatrix,
+        };
+        bucket.placements.forEach((placement, index) => {
+          const offset = index * 3;
+          swayData.positions[offset] = placement.x;
+          swayData.positions[offset + 1] = placement.y;
+          swayData.positions[offset + 2] = placement.z;
+          swayData.rotations[index] = placement.rotationY;
+          swayData.scales[index] = placement.scale;
+          swayData.phases[index] = placement.swayPhase;
+          swayData.speeds[index] = placement.swaySpeed;
+          swayData.amounts[index] = placement.swayAmount;
+        });
+        mesh.userData.swayData = swayData;
+      }
+      mesh.computeBoundingSphere();
+      group.add(mesh);
+    });
+  }
+}
+
+export function updateInstancedVegetationSway(
+  mesh: THREE.InstancedMesh,
+  elapsedTime: number
+) {
+  const data = mesh.userData.swayData as VegetationSwayData | undefined;
+  if (!data) return;
+
+  for (let index = 0; index < mesh.count; index++) {
+    const offset = index * 3;
+    vegetationPlacementScratch.x = data.positions[offset];
+    vegetationPlacementScratch.y = data.positions[offset + 1];
+    vegetationPlacementScratch.z = data.positions[offset + 2];
+    vegetationPlacementScratch.rotationY = data.rotations[index];
+    vegetationPlacementScratch.scale = data.scales[index];
+    vegetationPlacementScratch.swayPhase = data.phases[index];
+    vegetationPlacementScratch.swaySpeed = data.speeds[index];
+    vegetationPlacementScratch.swayAmount = data.amounts[index];
+    writeVegetationMatrix(mesh, index, vegetationPlacementScratch, data.partMatrix, elapsedTime);
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+}
+
 // ---------- Dense procedural grass ----------
 const trampleUniforms = {
   uTime: { value: 0 },
@@ -288,6 +454,10 @@ const trampleUniforms = {
   },
   uTrampleRadius: { value: 1.45 },
   uTrampleStrength: { value: 0.72 },
+  uGrassDetailStart: { value: 24 },
+  uGrassDetailEnd: { value: 48 },
+  uGrassFadeStart: { value: 54 },
+  uGrassFadeEnd: { value: 72 },
 };
 
 let hasTrampleSample = false;
@@ -309,6 +479,13 @@ export function updateGrassTrample(worldPosition: THREE.Vector3) {
 
 export function updateGrassWind(elapsedTime: number) {
   trampleUniforms.uTime.value = elapsedTime;
+}
+
+export function setGrassQuality(profile: QualityProfile) {
+  trampleUniforms.uGrassDetailStart.value = profile.grassDetailStart;
+  trampleUniforms.uGrassDetailEnd.value = profile.grassDetailEnd;
+  trampleUniforms.uGrassFadeStart.value = profile.grassFadeStart;
+  trampleUniforms.uGrassFadeEnd.value = profile.grassFadeEnd;
 }
 
 interface GrassVariant {
@@ -413,6 +590,10 @@ function getProceduralGrassVariant(): GrassVariant {
     shader.uniforms.uTramplePoints = trampleUniforms.uTramplePoints;
     shader.uniforms.uTrampleRadius = trampleUniforms.uTrampleRadius;
     shader.uniforms.uTrampleStrength = trampleUniforms.uTrampleStrength;
+    shader.uniforms.uGrassDetailStart = trampleUniforms.uGrassDetailStart;
+    shader.uniforms.uGrassDetailEnd = trampleUniforms.uGrassDetailEnd;
+    shader.uniforms.uGrassFadeStart = trampleUniforms.uGrassFadeStart;
+    shader.uniforms.uGrassFadeEnd = trampleUniforms.uGrassFadeEnd;
 
     shader.vertexShader = shader.vertexShader.replace(
       '#include <common>',
@@ -468,6 +649,10 @@ function getProceduralGrassVariant(): GrassVariant {
       #include <common>
       varying float vGrassDetailBand;
       varying vec3 vGrassWorldPosition;
+      uniform float uGrassDetailStart;
+      uniform float uGrassDetailEnd;
+      uniform float uGrassFadeStart;
+      uniform float uGrassFadeEnd;
       `
     );
     shader.fragmentShader = shader.fragmentShader.replace(
@@ -478,9 +663,9 @@ function getProceduralGrassVariant(): GrassVariant {
       float grassNoise = fract(
         sin(dot(floor(vGrassWorldPosition.xz * 13.0), vec2(12.9898, 78.233))) * 43758.5453
       );
-      float detailCoverage = 1.0 - smoothstep(24.0, 48.0, grassViewDistance);
+      float detailCoverage = 1.0 - smoothstep(uGrassDetailStart, uGrassDetailEnd, grassViewDistance);
       if (vGrassDetailBand > 0.5 && grassNoise > detailCoverage) discard;
-      float grassDistanceFade = 1.0 - smoothstep(54.0, 72.0, grassViewDistance);
+      float grassDistanceFade = 1.0 - smoothstep(uGrassFadeStart, uGrassFadeEnd, grassViewDistance);
       if (grassNoise > grassDistanceFade) discard;
       `
     );
@@ -492,7 +677,7 @@ function getProceduralGrassVariant(): GrassVariant {
       `
     );
   };
-  material.customProgramCacheKey = () => 'wild-roads-procedural-grass-v3';
+  material.customProgramCacheKey = () => 'wild-roads-procedural-grass-v4-quality';
   material.needsUpdate = true;
 
   proceduralGrassVariant = { geometry, material };
@@ -502,7 +687,6 @@ function getProceduralGrassVariant(): GrassVariant {
 function createGrassForChunk(
   chunkX: number,
   chunkZ: number,
-  _grassTemplates: THREE.Group[],
   placedFootprints: PlacedFootprint[]
 ): THREE.InstancedMesh[] {
   const worldOffsetX = chunkX * CHUNK_SIZE;
@@ -512,6 +696,7 @@ function createGrassForChunk(
 
   const matrixBuckets: THREE.Matrix4[][] = variants.map(() => []);
   const colorBuckets: THREE.Color[][] = variants.map(() => []);
+  const priorityBuckets: number[][] = variants.map(() => []);
   const cellSize = CHUNK_SIZE / GRASS_GRID_SIZE;
   const color = new THREE.Color();
 
@@ -524,6 +709,7 @@ function createGrassForChunk(
       const scaleRoll = coordinateRandom(chunkX, chunkZ, 20 + index * 1.7 + 1.3);
       const variantRoll = coordinateRandom(chunkX, chunkZ, 20 + index * 1.7 + 1.7);
       const densityRoll = coordinateRandom(chunkX, chunkZ, 20 + index * 1.7 + 2.1);
+      const qualityPriority = coordinateRandom(chunkX, chunkZ, 20 + index * 1.7 + 2.55);
       index++;
 
       const cellCenterX = -CHUNK_SIZE / 2 + gx * cellSize + cellSize / 2;
@@ -591,6 +777,7 @@ function createGrassForChunk(
         )
         .multiplyScalar(1.06);
       colorBuckets[variantIndex].push(color.clone());
+      priorityBuckets[variantIndex].push(qualityPriority);
     }
   }
 
@@ -599,6 +786,8 @@ function createGrassForChunk(
   matrixBuckets.forEach((matrices, i) => {
     if (matrices.length === 0) return;
     const variant = variants[i];
+    const order = matrices.map((_, index) => index)
+      .sort((left, right) => priorityBuckets[i][left] - priorityBuckets[i][right]);
     const instanced = new THREE.InstancedMesh(variant.geometry, variant.material, matrices.length);
     instanced.name = `biome-grass-${chunkX}-${chunkZ}-${i}`;
     instanced.castShadow = false;
@@ -606,10 +795,12 @@ function createGrassForChunk(
     instanced.frustumCulled = true;
     instanced.userData.bladesPerTuft = 7;
     instanced.userData.bladeCount = matrices.length * 7;
+    instanced.userData.qualityKind = 'grass';
+    instanced.userData.maximumCount = matrices.length;
 
-    matrices.forEach((matrix, instanceIndex) => {
-      instanced.setMatrixAt(instanceIndex, matrix);
-      instanced.setColorAt(instanceIndex, colorBuckets[i][instanceIndex]);
+    order.forEach((sourceIndex, instanceIndex) => {
+      instanced.setMatrixAt(instanceIndex, matrices[sourceIndex]);
+      instanced.setColorAt(instanceIndex, colorBuckets[i][sourceIndex]);
     });
     instanced.instanceMatrix.needsUpdate = true;
     if (instanced.instanceColor) instanced.instanceColor.needsUpdate = true;
@@ -636,6 +827,7 @@ function createFlowersForChunk(
   const headMatrices: THREE.Matrix4[] = [];
   const stemColors: THREE.Color[] = [];
   const headColors: THREE.Color[] = [];
+  const priorities: number[] = [];
   const stemColor = new THREE.Color();
   const headColor = new THREE.Color();
 
@@ -646,6 +838,7 @@ function createFlowersForChunk(
       const jitterZ = coordinateRandom(chunkX, chunkZ, 610 + index * 2.3 + 0.4);
       const densityRoll = coordinateRandom(chunkX, chunkZ, 610 + index * 2.3 + 0.8);
       const scaleRoll = coordinateRandom(chunkX, chunkZ, 610 + index * 2.3 + 1.2);
+      const qualityPriority = coordinateRandom(chunkX, chunkZ, 610 + index * 2.3 + 1.6);
       index++;
 
       const localX = -CHUNK_SIZE / 2 + (gridX + 0.2 + jitterX * 0.6) * cellSize;
@@ -685,6 +878,7 @@ function createFlowersForChunk(
       headMatrices.push(headMatrix);
       stemColors.push(stemColor.clone());
       headColors.push(headColor.clone());
+      priorities.push(qualityPriority);
     }
   }
 
@@ -696,12 +890,18 @@ function createFlowersForChunk(
   heads.name = `wildflower-heads-${chunkX}-${chunkZ}`;
   stems.receiveShadow = true;
   heads.receiveShadow = true;
+  stems.userData.qualityKind = 'flowers';
+  heads.userData.qualityKind = 'flowers';
+  stems.userData.maximumCount = stemMatrices.length;
+  heads.userData.maximumCount = headMatrices.length;
 
-  stemMatrices.forEach((matrix, instanceIndex) => {
-    stems.setMatrixAt(instanceIndex, matrix);
-    stems.setColorAt(instanceIndex, stemColors[instanceIndex]);
-    heads.setMatrixAt(instanceIndex, headMatrices[instanceIndex]);
-    heads.setColorAt(instanceIndex, headColors[instanceIndex]);
+  const order = stemMatrices.map((_, index) => index)
+    .sort((left, right) => priorities[left] - priorities[right]);
+  order.forEach((sourceIndex, instanceIndex) => {
+    stems.setMatrixAt(instanceIndex, stemMatrices[sourceIndex]);
+    stems.setColorAt(instanceIndex, stemColors[sourceIndex]);
+    heads.setMatrixAt(instanceIndex, headMatrices[sourceIndex]);
+    heads.setColorAt(instanceIndex, headColors[sourceIndex]);
   });
   stems.instanceMatrix.needsUpdate = true;
   heads.instanceMatrix.needsUpdate = true;
@@ -718,6 +918,7 @@ export function scatterDecorations(
   const group = new THREE.Group();
   const terrainColliders: TerrainCollider[] = [];
   const placedFootprints: PlacedFootprint[] = [];
+  const vegetationBuckets = new Map<THREE.Group, VegetationBucket>();
   const worldOffsetX = chunkX * CHUNK_SIZE;
   const worldOffsetZ = chunkZ * CHUNK_SIZE;
 
@@ -769,31 +970,26 @@ export function scatterDecorations(
       const template = chooseTemplate(templates, biomeId, kind, variantRoll);
       const groundOffset = getGroundOffset(template);
       const baseRadius = getHorizontalRadius(template);
-      const instance = template.clone(true);
       const variation = scaleRange[0] + scaleRoll * (scaleRange[1] - scaleRange[0]);
       const footprintRadius = Math.max(0.38, baseRadius * variation * (kind === 'bush' ? 0.48 : 0.7));
       if (overlapsFootprint(worldX, worldZ, footprintRadius, placedFootprints)) continue;
 
-      instance.scale.multiplyScalar(variation);
-
       const height = getTerrainHeight(worldX, worldZ);
-      instance.position.set(localX, height + groundOffset * variation, localZ);
-      instance.rotation.y = rotationRoll * Math.PI * 2;
-
-      if (swayAmount > 0) {
-        instance.userData.sway = true;
-        instance.userData.swayPhase = rotationRoll * Math.PI * 2;
-        instance.userData.swaySpeed = 0.4 + scaleRoll * 0.4;
-        instance.userData.swayAmount = swayAmount;
+      let bucket = vegetationBuckets.get(template);
+      if (!bucket) {
+        bucket = { template, kind, placements: [] };
+        vegetationBuckets.set(template, bucket);
       }
-
-      instance.traverse((child) => {
-        if (child instanceof THREE.Mesh) {
-          child.castShadow = true;
-          child.receiveShadow = true;
-        }
+      bucket.placements.push({
+        x: localX,
+        y: height + groundOffset * variation,
+        z: localZ,
+        rotationY: rotationRoll * Math.PI * 2,
+        scale: variation,
+        swayPhase: rotationRoll * Math.PI * 2,
+        swaySpeed: 0.4 + scaleRoll * 0.4,
+        swayAmount,
       });
-      group.add(instance);
       placedFootprints.push({ x: worldX, z: worldZ, radius: footprintRadius });
 
       if (kind === 'tree' || kind === 'rock') {
@@ -811,10 +1007,11 @@ export function scatterDecorations(
   placeItems(ROCK_CANDIDATES_PER_CHUNK, assets.rocks, 4, [0.62, 1.24], 'rock');
   placeItems(BUSH_CANDIDATES_PER_CHUNK, assets.bushes, 2, [0.7, 1.12], 'bush', 0.035);
 
+  createInstancedVegetation(group, vegetationBuckets, chunkX, chunkZ);
   group.position.set(worldOffsetX, 0, worldOffsetZ);
 
   const grassMeshes = [
-    ...createGrassForChunk(chunkX, chunkZ, assets.grassVariants, placedFootprints),
+    ...createGrassForChunk(chunkX, chunkZ, placedFootprints),
     ...createFlowersForChunk(chunkX, chunkZ, placedFootprints),
   ];
 

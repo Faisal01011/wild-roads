@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { getTerrainHeight } from '../world/chunk';
 import { createContactShadow, disposeContactShadow } from '../world/contactShadow';
+import type { QualityProfile } from '../utils/quality';
 import type {
   WildlifeSpecies,
   WildlifeThreatLevel,
@@ -131,6 +132,15 @@ export class AnimatedAnimal {
   private hasRaisedAlarm = false;
   private presentationTime = Math.random() * 10;
   private frameSpeed = 0;
+  private dynamicShadowDistance = 18;
+  private distantAnimationStride = 1;
+  private animationFrame = 0;
+  private animationDelta = 0;
+  private readonly updateResult: AnimalUpdateResult = {
+    didAttack: false,
+    threatLevel: null,
+    speed: 0,
+  };
 
   private readonly shadowCasters: THREE.Mesh[] = [];
   private castsDynamicShadow = false;
@@ -250,6 +260,14 @@ export class AnimatedAnimal {
 
   setReducedMotion(reduced: boolean) {
     this.reducedMotion = reduced;
+  }
+
+  setQuality(profile: QualityProfile) {
+    this.dynamicShadowDistance = profile.wildlifeShadowDistance;
+    this.distantAnimationStride = Math.max(1, profile.wildlifeAnimationStride);
+    if (this.dynamicShadowDistance > 0) return;
+    this.castsDynamicShadow = false;
+    for (const mesh of this.shadowCasters) mesh.castShadow = false;
   }
 
   private prepareMaterialsAndShadows() {
@@ -457,7 +475,8 @@ export class AnimatedAnimal {
     this.presentationTime += delta;
     this.attackCooldown = Math.max(0, this.attackCooldown - delta);
 
-    const shouldCastDynamicShadow = distanceToSnake < 18;
+    const shouldCastDynamicShadow =
+      this.dynamicShadowDistance > 0 && distanceToSnake < this.dynamicShadowDistance;
     if (shouldCastDynamicShadow !== this.castsDynamicShadow) {
       this.castsDynamicShadow = shouldCastDynamicShadow;
       for (const mesh of this.shadowCasters) mesh.castShadow = shouldCastDynamicShadow;
@@ -666,13 +685,22 @@ export class AnimatedAnimal {
     this.frameSpeed = this.previousPosition.distanceTo(this.mesh.position) / Math.max(delta, 0.001);
     this.updateBodyPose(delta);
     this.updatePresentation(delta, terrainHeight);
-    this.mixer?.update(delta);
+    this.animationFrame++;
+    this.animationDelta += delta;
+    const reactive = isReactiveAnimalState(this.state);
+    if (
+      reactive ||
+      distanceToSnake <= this.config.fleeTriggerRadius * 2 ||
+      this.animationFrame % this.distantAnimationStride === this.id % this.distantAnimationStride
+    ) {
+      this.mixer?.update(this.animationDelta);
+      this.animationDelta = 0;
+    }
 
-    return {
-      didAttack,
-      threatLevel: this.getThreatLevel(),
-      speed: this.frameSpeed,
-    };
+    this.updateResult.didAttack = didAttack;
+    this.updateResult.threatLevel = this.getThreatLevel();
+    this.updateResult.speed = this.frameSpeed;
+    return this.updateResult;
   }
 
   private updateBodyPose(delta: number) {

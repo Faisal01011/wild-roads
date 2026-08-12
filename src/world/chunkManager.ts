@@ -5,9 +5,12 @@ import {
   scatterCollectibles,
   animateCollectibles,
   updateGrassWind,
+  updateInstancedVegetationSway,
+  setGrassQuality,
   CHUNK_SIZE,
 } from './chunk';
 import type { ChunkAssets, TerrainCollider, CollectibleData } from './chunk';
+import type { QualityProfile } from '../utils/quality';
 
 const LOAD_RADIUS = 1;
 
@@ -20,10 +23,21 @@ export class ChunkManager {
   private loadedGrass: Map<string, THREE.InstancedMesh[]> = new Map();
   private loadedCollectibleGroups: Map<string, THREE.Group> = new Map();
   private activeCollectibles: Map<string, CollectibleData> = new Map();
+  private readonly neededKeys = new Set<string>();
+  private readonly colliderCache: TerrainCollider[] = [];
+  private readonly collisionResults: CollectibleData[] = [];
+  private collidersDirty = true;
+  private centerX = Number.NaN;
+  private centerZ = Number.NaN;
+  private lodX = Number.NaN;
+  private lodZ = Number.NaN;
+  private quality: QualityProfile;
 
-  constructor(scene: THREE.Scene, assets: ChunkAssets) {
+  constructor(scene: THREE.Scene, assets: ChunkAssets, quality: QualityProfile) {
     this.scene = scene;
     this.assets = assets;
+    this.quality = quality;
+    setGrassQuality(quality);
   }
 
   private key(x: number, z: number) {
@@ -33,13 +47,23 @@ export class ChunkManager {
   update(playerPosition: THREE.Vector3) {
     const centerX = Math.round(playerPosition.x / CHUNK_SIZE);
     const centerZ = Math.round(playerPosition.z / CHUNK_SIZE);
+    const lodMoved = !Number.isFinite(this.lodX)
+      || Math.hypot(playerPosition.x - this.lodX, playerPosition.z - this.lodZ) >= 4;
+    if (lodMoved) {
+      this.lodX = playerPosition.x;
+      this.lodZ = playerPosition.z;
+      this.applyDecorationQuality(playerPosition);
+    }
+    if (centerX === this.centerX && centerZ === this.centerZ) return;
+    this.centerX = centerX;
+    this.centerZ = centerZ;
 
-    const neededKeys = new Set<string>();
+    this.neededKeys.clear();
 
     for (let x = centerX - LOAD_RADIUS; x <= centerX + LOAD_RADIUS; x++) {
       for (let z = centerZ - LOAD_RADIUS; z <= centerZ + LOAD_RADIUS; z++) {
         const k = this.key(x, z);
-        neededKeys.add(k);
+        this.neededKeys.add(k);
 
         if (!this.loadedChunks.has(k)) {
           const chunk = createChunk(x, z);
@@ -50,9 +74,11 @@ export class ChunkManager {
           this.scene.add(group);
           this.loadedDecorations.set(k, group);
           this.loadedColliders.set(k, terrainColliders);
+          this.collidersDirty = true;
 
           grassMeshes.forEach((mesh) => this.scene.add(mesh));
           this.loadedGrass.set(k, grassMeshes);
+          this.applyGrassQuality(grassMeshes);
 
           const { group: collectibleGroup, collectibles } = scatterCollectibles(x, z);
           this.scene.add(collectibleGroup);
@@ -65,10 +91,11 @@ export class ChunkManager {
     }
 
     for (const [k, mesh] of this.loadedChunks) {
-      if (!neededKeys.has(k)) {
+      if (!this.neededKeys.has(k)) {
         this.unloadChunk(k, mesh);
       }
     }
+    this.applyDecorationQuality(playerPosition);
   }
 
   private unloadChunk(key: string, mesh: THREE.Mesh) {
@@ -81,16 +108,23 @@ export class ChunkManager {
     const decorations = this.loadedDecorations.get(key);
     if (decorations) {
       this.scene.remove(decorations);
+      decorations.traverse((child) => {
+        if (child instanceof THREE.InstancedMesh) child.dispose();
+      });
       this.loadedDecorations.delete(key);
     }
 
     this.loadedColliders.delete(key);
+    this.collidersDirty = true;
 
     const grassMeshes = this.loadedGrass.get(key);
     if (grassMeshes) {
       // Geometry and materials are shared by the module-level vegetation
-      // caches. Removing instances is enough when a streamed chunk unloads.
-      grassMeshes.forEach((grass) => this.scene.remove(grass));
+      // caches. Dispose only each mesh's per-instance GPU buffers.
+      grassMeshes.forEach((grass) => {
+        this.scene.remove(grass);
+        grass.dispose();
+      });
       this.loadedGrass.delete(key);
     }
 
@@ -106,18 +140,18 @@ export class ChunkManager {
       });
       this.loadedCollectibleGroups.delete(key);
 
-      for (const id of Array.from(this.activeCollectibles.keys())) {
+      for (const id of this.activeCollectibles.keys()) {
         if (id.startsWith(`${key},`)) this.activeCollectibles.delete(id);
       }
     }
   }
 
   getTerrainColliders(): TerrainCollider[] {
-    const all: TerrainCollider[] = [];
-    for (const colliders of this.loadedColliders.values()) {
-      all.push(...colliders);
-    }
-    return all;
+    if (!this.collidersDirty) return this.colliderCache;
+    this.colliderCache.length = 0;
+    for (const colliders of this.loadedColliders.values()) this.colliderCache.push(...colliders);
+    this.collidersDirty = false;
+    return this.colliderCache;
   }
 
   isPositionClear(worldX: number, worldZ: number, radius: number): boolean {
@@ -135,10 +169,8 @@ export class ChunkManager {
     updateGrassWind(elapsedTime);
     for (const decorations of this.loadedDecorations.values()) {
       for (const instance of decorations.children) {
-        if (instance.userData.sway) {
-          const { swayPhase, swaySpeed, swayAmount } = instance.userData;
-          instance.rotation.z = Math.sin(elapsedTime * swaySpeed + swayPhase) * swayAmount;
-          instance.rotation.x = Math.cos(elapsedTime * swaySpeed * 0.7 + swayPhase) * swayAmount * 0.5;
+        if (instance instanceof THREE.InstancedMesh) {
+          updateInstancedVegetationSway(instance, elapsedTime);
         }
       }
     }
@@ -151,7 +183,7 @@ export class ChunkManager {
   }
 
   checkCollectibleCollisions(headPosition: THREE.Vector3, pickupRadius: number = 0.9): CollectibleData[] {
-    const collected: CollectibleData[] = [];
+    this.collisionResults.length = 0;
 
     for (const [id, collectible] of this.activeCollectibles) {
       const dx = collectible.x - headPosition.x;
@@ -159,7 +191,7 @@ export class ChunkManager {
       const distance = Math.sqrt(dx * dx + dz * dz);
 
       if (distance < pickupRadius) {
-        collected.push(collectible);
+        this.collisionResults.push(collectible);
         this.activeCollectibles.delete(id);
 
         collectible.mesh.parent?.remove(collectible.mesh);
@@ -170,11 +202,51 @@ export class ChunkManager {
       }
     }
 
-    return collected;
+    return this.collisionResults;
+  }
+
+  setQuality(profile: QualityProfile, playerPosition: THREE.Vector3) {
+    this.quality = profile;
+    setGrassQuality(profile);
+    for (const grassMeshes of this.loadedGrass.values()) this.applyGrassQuality(grassMeshes);
+    this.applyDecorationQuality(playerPosition);
+  }
+
+  private applyGrassQuality(meshes: THREE.InstancedMesh[]) {
+    for (const mesh of meshes) {
+      const maximumCount = Number(mesh.userData.maximumCount ?? mesh.instanceMatrix.count);
+      const kind = mesh.userData.qualityKind as string | undefined;
+      const density = kind === 'flowers' ? this.quality.flowerDensity : this.quality.grassDensity;
+      mesh.count = Math.max(kind === 'flowers' ? 1 : 8, Math.round(maximumCount * density));
+      mesh.receiveShadow = kind === 'flowers' && this.quality.tier !== 'low';
+    }
+  }
+
+  private applyDecorationQuality(playerPosition: THREE.Vector3) {
+    for (const group of this.loadedDecorations.values()) {
+      const distance = Math.hypot(
+        group.position.x - playerPosition.x,
+        group.position.z - playerPosition.z
+      );
+      const withinShadowRange = distance <= this.quality.shadowDistance;
+      for (const child of group.children) {
+        if (!(child instanceof THREE.InstancedMesh)) continue;
+        const kind = child.userData.qualityKind as string | undefined;
+        const maximumCount = Number(child.userData.maximumCount ?? child.instanceMatrix.count);
+        child.count = kind === 'bush'
+          ? Math.max(1, Math.round(maximumCount * this.quality.bushDensity))
+          : maximumCount;
+        child.castShadow =
+          this.quality.vegetationShadows
+          && withinShadowRange
+          && (kind !== 'bush' || this.quality.tier === 'high');
+        child.receiveShadow = this.quality.tier !== 'low';
+      }
+    }
   }
 
   dispose() {
-    for (const [key, mesh] of Array.from(this.loadedChunks.entries())) {
+    for (const [key, mesh] of this.loadedChunks) {
       this.unloadChunk(key, mesh);
     }
     this.activeCollectibles.clear();

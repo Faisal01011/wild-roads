@@ -9,6 +9,7 @@ import type {
   WildlifeVariant,
 } from './wildlifeTypes';
 import { loadModel, getModelAnimations } from '../utils/assetLoader';
+import type { QualityProfile } from '../utils/quality';
 
 export interface SpeciesConfig extends AnimalConfig {
   modelPath: string;
@@ -46,23 +47,35 @@ export class AnimalManager {
   private spawnSequence = 0;
   private combatGraceRemaining: number;
   private reducedMotion: boolean;
+  private quality: QualityProfile;
+  private updateFrame = 0;
+  private readonly accumulatedDeltas = new Map<number, number>();
+  private readonly threatCache = new Map<number, WildlifeThreat>();
+  private readonly result: AnimalManagerResult = { eaten: [], attacks: [], threats: [] };
 
   constructor(
     scene: THREE.Scene,
     config: SpeciesConfig,
     effects: WildlifeEffects,
-    reducedMotion: boolean
+    reducedMotion: boolean,
+    quality: QualityProfile
   ) {
     this.scene = scene;
     this.config = config;
     this.effects = effects;
     this.reducedMotion = reducedMotion;
+    this.quality = quality;
     this.combatGraceRemaining = config.combatGraceSeconds ?? 0;
   }
 
   setReducedMotion(reduced: boolean) {
     this.reducedMotion = reduced;
     for (const animal of this.animals) animal.setReducedMotion(reduced);
+  }
+
+  setQuality(profile: QualityProfile) {
+    this.quality = profile;
+    for (const animal of this.animals) animal.setQuality(profile);
   }
 
   private async spawnOne(nearPosition: THREE.Vector3) {
@@ -97,6 +110,7 @@ export class AnimalManager {
         variant,
         this.reducedMotion
       );
+      animal.setQuality(this.quality);
       this.spawnSequence++;
       this.animals.push(animal);
       this.scene.add(animal.mesh, animal.contactShadow, animal.presentationRoot);
@@ -148,43 +162,69 @@ export class AnimalManager {
     const animal = this.animals[index];
     this.scene.remove(animal.mesh, animal.contactShadow, animal.presentationRoot);
     this.effects.forgetAnimal(animal.id);
+    this.accumulatedDeltas.delete(animal.id);
+    this.threatCache.delete(animal.id);
     animal.dispose();
     this.animals.splice(index, 1);
   }
 
   update(delta: number, snakeHeadPosition: THREE.Vector3): AnimalManagerResult {
-    const result: AnimalManagerResult = { eaten: [], attacks: [], threats: [] };
-    if (this.disposed) return result;
+    this.result.eaten.length = 0;
+    this.result.attacks.length = 0;
+    this.result.threats.length = 0;
+    if (this.disposed) return this.result;
 
+    this.updateFrame++;
     this.combatGraceRemaining = Math.max(0, this.combatGraceRemaining - delta);
     const combatEnabled = this.combatGraceRemaining <= 0 || Boolean(this.config.debugState);
 
     for (const animal of this.animals) animal.nearbyAnimals = this.animals;
 
     for (const animal of this.animals) {
-      const update = animal.update(delta, snakeHeadPosition, combatEnabled);
+      const distanceSquared = animal.mesh.position.distanceToSquared(snakeHeadPosition);
+      const far = distanceSquared > this.quality.wildlifeLodDistance ** 2;
+      const reactive = animal.currentState === 'alert'
+        || animal.currentState === 'panic'
+        || animal.currentState === 'circle'
+        || animal.currentState === 'windup'
+        || animal.currentState === 'strike'
+        || animal.currentState === 'recover';
+      const stride = far && !reactive ? this.quality.wildlifeAiStride : 1;
+      const accumulated = (this.accumulatedDeltas.get(animal.id) ?? 0) + delta;
+      this.accumulatedDeltas.set(animal.id, accumulated);
+      if (stride > 1 && (this.updateFrame + animal.id) % stride !== 0) continue;
+
+      this.accumulatedDeltas.set(animal.id, 0);
+      const update = animal.update(accumulated, snakeHeadPosition, combatEnabled);
       this.effects.updateAnimal(
         animal.id,
         animal.mesh.position,
         animal.mesh.rotation.y,
         update.speed,
         animal.species,
-        delta
+        accumulated
       );
 
       if (update.didAttack) {
-        result.attacks.push({
+        this.result.attacks.push({
           animalId: animal.id,
           position: animal.mesh.position.clone(),
         });
       }
       if (update.threatLevel) {
-        result.threats.push({
-          id: animal.id,
-          position: animal.mesh.position,
-          distance: animal.mesh.position.distanceTo(snakeHeadPosition),
-          level: update.threatLevel,
-        });
+        let threat = this.threatCache.get(animal.id);
+        if (!threat) {
+          threat = {
+            id: animal.id,
+            position: animal.mesh.position,
+            distance: 0,
+            level: update.threatLevel,
+          };
+          this.threatCache.set(animal.id, threat);
+        }
+        threat.distance = Math.sqrt(distanceSquared);
+        threat.level = update.threatLevel;
+        this.result.threats.push(threat);
       }
     }
 
@@ -195,7 +235,7 @@ export class AnimalManager {
         if (distance >= this.config.eatDistance) continue;
 
         const position = animal.mesh.position.clone();
-        result.eaten.push({
+        this.result.eaten.push({
           animalId: animal.id,
           position,
           points: this.config.points,
@@ -215,7 +255,7 @@ export class AnimalManager {
       void this.spawnOne(snakeHeadPosition);
     }
 
-    return result;
+    return this.result;
   }
 
   dispose() {
